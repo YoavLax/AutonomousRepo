@@ -1,7 +1,7 @@
-Add a helpful comment at the top explaining the purpose of the project and how to get started. For example:
+Add a helpful comment at the top:
 
 ```
 # Project Overview
 
-This repository contains code and resources for the testgreengithub project. To get started, clone the repository and follow the setup instructions below.
+This repository contains code and resources for the testgreengithub project. For setup instructions and usage examples, see below.
 ```
