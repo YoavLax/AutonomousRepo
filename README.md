@@ -1,4 +1,4 @@
-Add a helpful comment at the top explaining the purpose of this repository and how to get started. For example:
+Add a helpful comment at the top explaining the purpose of the project and how to get started. For example:
 
 ```
 # Project Overview
