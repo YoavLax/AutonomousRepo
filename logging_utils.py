@@ -5,7 +5,7 @@ def setup_logger(
     name: str,
     log_file: Optional[str] = None,
     level: int = logging.INFO,
-    fmt: str = "%(asctime)s [%(levelname)s] %(name)s: %(message)s"
+    fmt: str = "%(asctime)s - %(levelname)s - %(name)s - %(message)s"
 ) -> logging.Logger:
     """
     Sets up and returns a logger with the specified name, log file, and level.
@@ -13,7 +13,7 @@ def setup_logger(
     Args:
         name (str): Name of the logger.
         log_file (Optional[str]): If provided, logs will be written to this file.
-        level (int): Logging level (e.g., logging.INFO).
+        level (int): Logging level (e.g., logging.INFO, logging.DEBUG).
         fmt (str): Log message format.
 
     Returns:
@@ -24,13 +24,22 @@ def setup_logger(
     formatter = logging.Formatter(fmt)
 
     if not logger.handlers:
-        stream_handler = logging.StreamHandler()
-        stream_handler.setFormatter(formatter)
-        logger.addHandler(stream_handler)
+        # Console handler
+        ch = logging.StreamHandler()
+        ch.setFormatter(formatter)
+        logger.addHandler(ch)
 
+        # File handler if log_file is specified
         if log_file:
-            file_handler = logging.FileHandler(log_file)
-            file_handler.setFormatter(formatter)
-            logger.addHandler(file_handler)
+            fh = logging.FileHandler(log_file)
+            fh.setFormatter(formatter)
+            logger.addHandler(fh)
 
     return logger
+
+# Example usage:
+if __name__ == "__main__":
+    log = setup_logger("test_logger", "test.log", logging.DEBUG)
+    log.info("Logger initialized.")
+    log.debug("This is a debug message.")
+    log.error("This is an error message.")
