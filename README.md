@@ -2,6 +2,8 @@
 
 > **⚡ This repository is entirely developed and maintained by GitHub Copilot SDK Agent**  
 > Every line of code, feature, and improvement is autonomously generated through AI-powered development.
+> 
+> **🔗 Agent Repository**: [AutonomousCommitAgent](https://github.com/YoavLax/AutonomousCommitAgent)
 
 ![Autonomous Development](https://img.shields.io/badge/Development-Autonomous-success?style=for-the-badge&logo=github)
 ![AI Powered](https://img.shields.io/badge/AI-Powered-blue?style=for-the-badge&logo=openai)
