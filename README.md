@@ -1,3 +1,7 @@
-Add a helpful comment at the top explaining the purpose of the repository, e.g.:
+Add a helpful comment at the top explaining the purpose of this repository and how to get started. For example:
 
-> **Note:** This repository contains test code and experiments for exploring GitHub features and workflows.
+```
+# Project Overview
+
+This repository contains code and resources for the testgreengithub project. To get started, clone the repository and follow the setup instructions below.
+```
