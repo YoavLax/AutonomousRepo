@@ -1,5 +1,5 @@
 import os
-from flask import Flask, render_template_string, request, redirect, url_for, flash
+from flask import Flask, render_template_string, request, redirect, url_for, flash, jsonify
 from pathlib import Path
 import subprocess
 from datetime import datetime
@@ -43,6 +43,23 @@ DASHBOARD_TEMPLATE = """
     </form>
     <h2>Recent Log</h2>
     <div class="log">{{ log_content|safe }}</div>
+    <h2>Live Status</h2>
+    <button class="btn" onclick="fetchStatus()">Refresh Status</button>
+    <pre id="live-status" style="background:#222;color:#b6ffb6;padding:1em;border-radius:8px;"></pre>
+    <script>
+        function fetchStatus() {
+            fetch('/api/status')
+                .then(resp => resp.json())
+                .then(data => {
+                    document.getElementById('live-status').textContent =
+                        "Agent Running: " + data.running + "\\n" +
+                        "Last Commit: " + data.last_commit + "\\n" +
+                        "Last Run: " + data.last_run + "\\n" +
+                        "Log Tail:\\n" + data.log_tail;
+                });
+        }
+        window.onload = fetchStatus;
+    </script>
 </body>
 </html>
 """
@@ -77,6 +94,24 @@ def get_log_content(lines=40):
         return "<br>".join(line.replace("<", "&lt;").replace(">", "&gt;") for line in log_lines)
     return "No log available."
 
+def get_agent_status():
+    # Check if agent process is running (simple check for demo)
+    try:
+        result = subprocess.run(
+            ["tasklist"], capture_output=True, text=True
+        )
+        running = "autonomous_agent.py" in result.stdout
+    except Exception:
+        running = False
+    return running
+
+def get_log_tail(lines=10):
+    if LOG_PATH.exists():
+        with open(LOG_PATH, "r", encoding="utf-8") as f:
+            log_lines = f.readlines()[-lines:]
+        return "".join(log_lines)
+    return "No log available."
+
 @app.route("/", methods=["GET"])
 def dashboard():
     return render_template_string(
@@ -103,6 +138,16 @@ def run_agent():
         flash(f"Error running agent: {e}")
     return redirect(url_for("dashboard"))
 
+@app.route("/api/status", methods=["GET"])
+def api_status():
+    status = {
+        "running": get_agent_status(),
+        "last_commit": get_last_commit() or "N/A",
+        "last_run": get_last_run_time() or "N/A",
+        "log_tail": get_log_tail(10)
+    }
+    return jsonify(status)
+
 if __name__ == "__main__":
     app.run(port=5050, debug=True)
-This dashboard lets users monitor commit activity, view logs, and trigger the agent manually, greatly improving usability and transparency.
+This enhancement adds a live status API and dashboard section, allowing users to monitor agent activity, last commit, last run, and recent logs in real time.
