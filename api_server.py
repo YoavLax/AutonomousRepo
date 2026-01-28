@@ -8,8 +8,6 @@ app = Flask(__name__)
 LOG_PATH = Path(os.getenv("TARGET_REPO_PATH", os.getcwd())) / "autonomous_agent.log"
 logger = setup_logger("api_server", str(LOG_PATH), level=os.getenv("API_LOG_LEVEL", "INFO"))
 
-# Existing text analysis endpoint...
-
 @app.route("/api/generate-content", methods=["POST"])
 def generate_content():
     """
@@ -36,4 +34,31 @@ def generate_content():
     try:
         openai.api_key = os.getenv("OPENAI_API_KEY")
         if not openai.api_key:
-            raise ValueError("OpenAI API
+            raise ValueError("OpenAI API key not set.")
+        response = openai.ChatCompletion.create(
+            model="gpt-3.5-turbo",
+            messages=[{"role": "user", "content": prompt}],
+            max_tokens=256,
+            temperature=0.7,
+        )
+        result = response.choices[0].message.content.strip()
+        logger.info(f"Generated content for type={content_type}, topic={topic}")
+        return jsonify({"result": result})
+    except Exception as e:
+        logger.error(f"OpenAI error: {e}")
+        return jsonify({"error": str(e)}), 500
+
+@app.route("/api/chat", methods=["POST"])
+def chat():
+    """
+    AI chat endpoint. Expects JSON: { "message": "..." }
+    Returns: { "response": "..." }
+    """
+    data = request.get_json()
+    if not data or "message" not in data:
+        return jsonify({"error": "Missing message."}), 400
+    user_message = data["message"]
+    try:
+        openai.api_key = os.getenv("OPENAI_API_KEY")
+        if not openai.api_key:
+            raise ValueError("OpenAI API key not set
