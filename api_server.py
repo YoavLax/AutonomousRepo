@@ -2,62 +2,38 @@ import os
 from flask import Flask, request, jsonify
 from pathlib import Path
 from logging_utils import setup_logger
+import openai
 
 app = Flask(__name__)
 LOG_PATH = Path(os.getenv("TARGET_REPO_PATH", os.getcwd())) / "autonomous_agent.log"
 logger = setup_logger("api_server", str(LOG_PATH), level=os.getenv("API_LOG_LEVEL", "INFO"))
 
-@app.route("/api/text-analysis", methods=["POST"])
-def text_analysis():
+# Existing text analysis endpoint...
+
+@app.route("/api/generate-content", methods=["POST"])
+def generate_content():
     """
-    Analyze text for word count, character count, reading time, paragraph count, sentiment, and complexity.
-    Expects JSON: { "text": "..." }
+    Generate creative content (headline, paragraph, ideas, summary) using OpenAI API.
+    Expects JSON: { "type": "headline"|"paragraph"|"ideas"|"summary", "topic": "..." }
     """
     data = request.get_json()
-    if not data or "text" not in data:
-        logger.warning("No text provided for analysis.")
-        return jsonify({"error": "No text provided."}), 400
+    if not data or "type" not in data or "topic" not in data:
+        logger.warning("Invalid request for content generation.")
+        return jsonify({"error": "Missing type or topic."}), 400
 
-    text = data["text"]
-    words = [w for w in text.split() if w.strip()]
-    word_count = len(words)
-    char_count = len(text)
-    read_time = max(1, round(word_count / 200))
-    paragraphs = [p for p in text.split("\n\n") if p.strip()]
-    para_count = len(paragraphs)
+    content_type = data["type"]
+    topic = data["topic"]
+    prompt_map = {
+        "headline": f"Write a catchy headline about: {topic}",
+        "paragraph": f"Write a detailed paragraph about: {topic}",
+        "ideas": f"List 5 creative ideas related to: {topic}",
+        "summary": f"Write a concise summary of: {topic}",
+    }
+    prompt = prompt_map.get(content_type)
+    if not prompt:
+        return jsonify({"error": "Invalid content type."}), 400
 
-    # Simple sentiment analysis
-    positive_words = {'good', 'great', 'excellent', 'amazing', 'wonderful', 'fantastic', 'love', 'happy', 'best', 'awesome', 'brilliant', 'perfect'}
-    negative_words = {'bad', 'terrible', 'awful', 'horrible', 'hate', 'worst', 'poor', 'disappointing', 'sad', 'angry', 'difficult'}
-    lower_text = text.lower()
-    pos_count = sum(lower_text.count(w) for w in positive_words)
-    neg_count = sum(lower_text.count(w) for w in negative_words)
-    if pos_count > neg_count * 1.5:
-        sentiment = "positive"
-    elif neg_count > pos_count * 1.5:
-        sentiment = "negative"
-    else:
-        sentiment = "neutral"
-
-    avg_word_length = sum(len(w) for w in words) / word_count if word_count else 0
-    if avg_word_length < 4:
-        complexity = "simple"
-    elif avg_word_length < 6:
-        complexity = "moderate"
-    else:
-        complexity = "complex"
-
-    logger.info("Text analysis performed.")
-    return jsonify({
-        "word_count": word_count,
-        "char_count": char_count,
-        "read_time": read_time,
-        "para_count": para_count,
-        "sentiment": sentiment,
-        "complexity": complexity
-    })
-
-if __name__ == "__main__":
-    app.run(port=5051, debug=True)
-
-This production-ready Flask API provides a `/api/text-analysis` endpoint for programmatic text analysis, enabling integration with the web UI or external tools.
+    try:
+        openai.api_key = os.getenv("OPENAI_API_KEY")
+        if not openai.api_key:
+            raise ValueError("OpenAI API
