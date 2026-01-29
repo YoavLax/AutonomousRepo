@@ -12,11 +12,10 @@ def analyze_sentiment_batch(texts):
     results = []
     for text in texts:
         blob = TextBlob(text)
-        sentiment = blob.sentiment
         results.append({
             "text": text,
-            "polarity": sentiment.polarity,
-            "subjectivity": sentiment.subjectivity
+            "polarity": blob.sentiment.polarity,
+            "subjectivity": blob.sentiment.subjectivity
         })
     return results
 
@@ -42,9 +41,9 @@ def create_app():
     return app
 
 def new_feature():
-    '''Run a Flask server providing a batch sentiment analysis API endpoint'''
+    '''Run a Flask server providing batch sentiment analysis API'''
     app = create_app()
-    app.run(host="0.0.0.0", port=5050, debug=False)
+    app.run(host="0.0.0.0", port=5050)
 
 if __name__ == "__main__":
     new_feature()
