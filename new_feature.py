@@ -2,48 +2,54 @@ import os
 from flask import Flask, request, jsonify
 from pathlib import Path
 from logging_utils import setup_logger
-from textblob import TextBlob
+import sqlite3
+import datetime
 
-def analyze_sentiment_batch(texts):
-    """
-    Analyze sentiment for a batch of texts.
-    Returns a list of dicts with polarity and subjectivity for each text.
-    """
-    results = []
-    for text in texts:
-        blob = TextBlob(text)
-        results.append({
-            "text": text,
-            "polarity": blob.sentiment.polarity,
-            "subjectivity": blob.sentiment.subjectivity
-        })
-    return results
+def get_execution_stats(db_path: str = "execution_log.db"):
+    """Fetch execution statistics from the autonomous agent's log database."""
+    if not os.path.exists(db_path):
+        return {"error": "Execution log database not found."}
+    conn = sqlite3.connect(db_path)
+    cursor = conn.cursor()
+    try:
+        cursor.execute("SELECT COUNT(*) FROM execution_log")
+        total_runs = cursor.fetchone()[0]
+        cursor.execute("SELECT status, COUNT(*) FROM execution_log GROUP BY status")
+        status_counts = {row[0]: row[1] for row in cursor.fetchall()}
+        cursor.execute("SELECT MAX(timestamp) FROM execution_log")
+        last_run = cursor.fetchone()[0]
+        stats = {
+            "total_runs": total_runs,
+            "status_counts": status_counts,
+            "last_run": last_run
+        }
+        return stats
+    except Exception as e:
+        return {"error": str(e)}
+    finally:
+        conn.close()
 
-def create_app():
+def create_stats_api():
+    """Create a Flask API endpoint to serve execution statistics."""
     app = Flask(__name__)
-    LOG_PATH = Path(os.getenv("TARGET_REPO_PATH", os.getcwd())) / "batch_sentiment.log"
-    logger = setup_logger("batch_sentiment_api", str(LOG_PATH), level=os.getenv("API_LOG_LEVEL", "INFO"))
+    LOG_PATH = Path(os.getenv("TARGET_REPO_PATH", os.getcwd())) / "new_feature.log"
+    logger = setup_logger("new_feature", str(LOG_PATH), level=os.getenv("API_LOG_LEVEL", "INFO"))
 
-    @app.route("/api/batch-sentiment", methods=["POST"])
-    def batch_sentiment():
-        """
-        Accepts a JSON payload with a list of texts and returns their sentiment analysis.
-        Example input: { "texts": ["I love this!", "This is bad."] }
-        """
-        data = request.get_json()
-        if not data or "texts" not in data or not isinstance(data["texts"], list):
-            logger.warning("Invalid input for batch sentiment analysis")
-            return jsonify({"error": "Invalid input. Provide a JSON object with a 'texts' list."}), 400
-        results = analyze_sentiment_batch(data["texts"])
-        logger.info(f"Processed batch sentiment for {len(data['texts'])} texts")
-        return jsonify({"results": results})
+    @app.route("/api/execution-stats", methods=["GET"])
+    def execution_stats():
+        stats = get_execution_stats()
+        if "error" in stats:
+            logger.error(f"Error fetching stats: {stats['error']}")
+            return jsonify({"error": stats["error"]}), 500
+        logger.info("Execution stats served successfully.")
+        return jsonify(stats)
 
     return app
 
 def new_feature():
-    '''Run a Flask server providing batch sentiment analysis API'''
-    app = create_app()
-    app.run(host="0.0.0.0", port=5050)
+    '''Run a Flask server exposing an API endpoint for execution statistics.'''
+    app = create_stats_api()
+    app.run(host="0.0.0.0", port=5050, debug=False)
 
 if __name__ == "__main__":
     new_feature()
