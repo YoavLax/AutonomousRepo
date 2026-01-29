@@ -19,32 +19,34 @@ def analyze_sentiment_batch(texts):
         })
     return results
 
-def create_app():
+def create_sentiment_api():
+    """
+    Create a Flask API endpoint for batch sentiment analysis.
+    """
     app = Flask(__name__)
-    LOG_PATH = Path(os.getenv("TARGET_REPO_PATH", os.getcwd())) / "batch_sentiment.log"
-    logger = setup_logger("batch_sentiment", str(LOG_PATH), level=os.getenv("API_LOG_LEVEL", "INFO"))
+    LOG_PATH = Path(os.getenv("TARGET_REPO_PATH", os.getcwd())) / "batch_sentiment_api.log"
+    logger = setup_logger("batch_sentiment_api", str(LOG_PATH), level=os.getenv("API_LOG_LEVEL", "INFO"))
 
     @app.route("/api/batch-sentiment", methods=["POST"])
     def batch_sentiment():
-        """
-        Accepts a JSON payload with a list of texts and returns their sentiment analysis.
-        Example input: {"texts": ["I love this!", "This is bad."]}
-        """
-        data = request.get_json()
-        if not data or "texts" not in data or not isinstance(data["texts"], list):
-            logger.warning("Invalid input for batch sentiment analysis")
-            return jsonify({"error": "Invalid input. Provide a JSON with a 'texts' list."}), 400
-        results = analyze_sentiment_batch(data["texts"])
-        logger.info(f"Batch sentiment analysis performed on {len(data['texts'])} texts.")
-        return jsonify({"results": results})
+        try:
+            data = request.get_json(force=True)
+            texts = data.get("texts")
+            if not isinstance(texts, list) or not all(isinstance(t, str) for t in texts):
+                logger.warning("Invalid input for batch sentiment analysis")
+                return jsonify({"error": "Invalid input. 'texts' must be a list of strings."}), 400
+            logger.info(f"Received batch sentiment request for {len(texts)} texts")
+            results = analyze_sentiment_batch(texts)
+            return jsonify({"results": results}), 200
+        except Exception as e:
+            logger.error(f"Error in batch sentiment analysis: {e}")
+            return jsonify({"error": "Internal server error"}), 500
 
     return app
 
 def new_feature():
-    """
-    Starts a Flask server with a new /api/batch-sentiment endpoint for batch sentiment analysis.
-    """
-    app = create_app()
+    '''Run the batch sentiment analysis API server'''
+    app = create_sentiment_api()
     app.run(host="0.0.0.0", port=5050, debug=False)
 
 if __name__ == "__main__":
