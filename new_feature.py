@@ -1,67 +1,53 @@
 import os
-import sqlite3
-from datetime import datetime
-from typing import List, Dict, Any, Optional
+from flask import Flask, request, jsonify
+from pathlib import Path
+from logging_utils import setup_logger
+from textblob import TextBlob
 
-from autonomous_agent import ExecutionLog
-
-def summarize_recent_executions(limit: int = 10) -> List[Dict[str, Any]]:
+def analyze_sentiment_batch(texts):
     """
-    Summarize the most recent executions from the ExecutionLog database.
-
-    Args:
-        limit (int): Number of recent executions to summarize.
-
-    Returns:
-        List[Dict[str, Any]]: List of execution summaries.
+    Analyze sentiment for a batch of texts.
+    Returns a list of dicts with polarity and subjectivity for each text.
     """
-    db_path = "execution_log.db"
-    if not os.path.exists(db_path):
-        print("No execution log database found.")
-        return []
+    results = []
+    for text in texts:
+        blob = TextBlob(text)
+        results.append({
+            "text": text,
+            "polarity": blob.sentiment.polarity,
+            "subjectivity": blob.sentiment.subjectivity
+        })
+    return results
 
-    conn = sqlite3.connect(db_path)
-    cursor = conn.cursor()
-    try:
-        cursor.execute("""
-            SELECT id, timestamp, action, status, details
-            FROM executions
-            ORDER BY timestamp DESC
-            LIMIT ?
-        """, (limit,))
-        rows = cursor.fetchall()
-        summaries = []
-        for row in rows:
-            summaries.append({
-                "id": row[0],
-                "timestamp": row[1],
-                "action": row[2],
-                "status": row[3],
-                "details": row[4]
-            })
-        return summaries
-    except sqlite3.Error as e:
-        print(f"Database error: {e}")
-        return []
-    finally:
-        conn.close()
+def create_sentiment_api():
+    """
+    Create a Flask app with a /api/batch-sentiment endpoint for batch sentiment analysis.
+    """
+    app = Flask(__name__)
+    LOG_PATH = Path(os.getenv("TARGET_REPO_PATH", os.getcwd())) / "batch_sentiment.log"
+    logger = setup_logger("batch_sentiment_api", str(LOG_PATH), level=os.getenv("API_LOG_LEVEL", "INFO"))
 
-def print_execution_summary(limit: int = 10):
-    """
-    Print a summary of recent executions to the console.
-    """
-    summaries = summarize_recent_executions(limit)
-    if not summaries:
-        print("No recent executions found.")
-        return
-    print(f"{'ID':<5} {'Timestamp':<20} {'Action':<30} {'Status':<10} Details")
-    print("-" * 80)
-    for entry in summaries:
-        print(f"{entry['id']:<5} {entry['timestamp']:<20} {entry['action']:<30} {entry['status']:<10} {entry['details']}")
+    @app.route("/api/batch-sentiment", methods=["POST"])
+    def batch_sentiment():
+        """
+        Accepts JSON: { "texts": [ ... ] }
+        Returns: { "results": [ { "text": ..., "polarity": ..., "subjectivity": ... }, ... ] }
+        """
+        data = request.get_json(force=True)
+        texts = data.get("texts")
+        if not isinstance(texts, list) or not all(isinstance(t, str) for t in texts):
+            logger.warning("Invalid input for batch sentiment: %s", data)
+            return jsonify({"error": "Invalid input. 'texts' must be a list of strings."}), 400
+        logger.info("Processing batch sentiment for %d texts", len(texts))
+        results = analyze_sentiment_batch(texts)
+        return jsonify({"results": results})
+
+    return app
 
 def new_feature():
-    '''Summarize and print the most recent executions from the ExecutionLog database.'''
-    print_execution_summary(limit=10)
+    '''Run the batch sentiment analysis API server'''
+    app = create_sentiment_api()
+    app.run(host="0.0.0.0", port=5050, debug=False)
 
 if __name__ == "__main__":
     new_feature()
