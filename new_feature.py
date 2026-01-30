@@ -5,62 +5,51 @@ from logging_utils import setup_logger
 import sqlite3
 import datetime
 
-def get_db_path() -> str:
-    """Get the path to the execution log database."""
-    return os.getenv("EXEC_LOG_DB_PATH", "execution_log.db")
-
-def fetch_recent_executions(limit: int = 10):
-    """Fetch recent execution logs from the database."""
-    db_path = get_db_path()
+def get_log_stats(db_path: str = "execution_log.db"):
+    """Return statistics about the autonomous agent's execution log."""
     if not os.path.exists(db_path):
-        return []
-    conn = sqlite3.connect(db_path)
-    cursor = conn.cursor()
+        return {"error": "Log database not found."}
     try:
-        cursor.execute(
-            "SELECT id, timestamp, action, status, details FROM execution_log ORDER BY timestamp DESC LIMIT ?",
-            (limit,)
-        )
-        rows = cursor.fetchall()
-        return [
-            {
-                "id": row[0],
-                "timestamp": row[1],
-                "action": row[2],
-                "status": row[3],
-                "details": row[4]
-            }
-            for row in rows
-        ]
-    finally:
+        conn = sqlite3.connect(db_path)
+        cursor = conn.cursor()
+        cursor.execute("SELECT COUNT(*) FROM execution_log")
+        total = cursor.fetchone()[0]
+        cursor.execute("SELECT level, COUNT(*) FROM execution_log GROUP BY level")
+        by_level = {row[0]: row[1] for row in cursor.fetchall()}
+        cursor.execute("SELECT MIN(timestamp), MAX(timestamp) FROM execution_log")
+        min_ts, max_ts = cursor.fetchone()
         conn.close()
+        return {
+            "total_entries": total,
+            "by_level": by_level,
+            "first_entry": min_ts,
+            "last_entry": max_ts
+        }
+    except Exception as e:
+        return {"error": str(e)}
 
-def create_app():
+def create_log_stats_api():
+    """Create a Flask app exposing an endpoint for log statistics."""
     app = Flask(__name__)
-    LOG_PATH = Path(os.getenv("TARGET_REPO_PATH", os.getcwd())) / "new_feature.log"
-    logger = setup_logger("new_feature", str(LOG_PATH), level=os.getenv("API_LOG_LEVEL", "INFO"))
+    LOG_PATH = Path(os.getenv("TARGET_REPO_PATH", os.getcwd())) / "autonomous_agent.log"
+    logger = setup_logger("log_stats_api", str(LOG_PATH), level=os.getenv("API_LOG_LEVEL", "INFO"))
 
-    @app.route("/api/recent-executions", methods=["GET"])
-    def recent_executions():
-        """
-        API endpoint to fetch recent execution logs.
-        Query param: limit (optional, default 10)
-        """
-        try:
-            limit = int(request.args.get("limit", 10))
-            logs = fetch_recent_executions(limit)
-            logger.info(f"Fetched {len(logs)} recent executions.")
-            return jsonify({"success": True, "executions": logs})
-        except Exception as e:
-            logger.error(f"Error fetching recent executions: {e}")
-            return jsonify({"success": False, "error": str(e)}), 500
+    @app.route("/api/log-stats", methods=["GET"])
+    def log_stats():
+        db_path = request.args.get("db_path", "execution_log.db")
+        stats = get_log_stats(db_path)
+        logger.info(f"Log stats requested: {stats}")
+        return jsonify(stats)
 
     return app
 
 def new_feature():
-    '''Run a Flask server exposing an endpoint to fetch recent execution logs'''
-    app = create_app()
-    app.run(host="0.0.0.0", port=int(os.getenv("NEW_FEATURE_PORT", 5050)), debug=False)
+    """
+    Run a Flask server exposing /api/log-stats, which returns statistics
+    about the autonomous agent's execution log database.
+    """
+    app = create_log_stats_api()
+    app.run(host="0.0.0.0", port=5050, debug=False)
 
 if __name__ == "__main__":
     new_feature()
