@@ -2,43 +2,44 @@ import os
 from flask import Flask, request, jsonify
 from pathlib import Path
 from logging_utils import setup_logger
-from textblob import TextBlob
+import sqlite3
+import datetime
 
-def analyze_sentiment(text: str) -> dict:
-    """Analyze sentiment of the given text using TextBlob."""
-    blob = TextBlob(text)
-    polarity = blob.sentiment.polarity
-    subjectivity = blob.sentiment.subjectivity
-    sentiment = "positive" if polarity > 0 else "negative" if polarity < 0 else "neutral"
-    return {
-        "sentiment": sentiment,
-        "polarity": polarity,
-        "subjectivity": subjectivity
-    }
+def get_log_stats(db_path: str = "execution_log.db"):
+    """Return statistics about the execution log: total entries, last entry timestamp."""
+    if not os.path.exists(db_path):
+        return {"total_entries": 0, "last_entry": None}
+    conn = sqlite3.connect(db_path)
+    cursor = conn.cursor()
+    try:
+        cursor.execute("SELECT COUNT(*), MAX(timestamp) FROM execution_log")
+        total, last = cursor.fetchone()
+        return {"total_entries": total, "last_entry": last}
+    except sqlite3.OperationalError:
+        return {"total_entries": 0, "last_entry": None}
+    finally:
+        conn.close()
 
-def create_sentiment_api():
-    """Create a Flask API endpoint for sentiment analysis."""
+def create_stats_api():
     app = Flask(__name__)
-    LOG_PATH = Path(os.getenv("TARGET_REPO_PATH", os.getcwd())) / "sentiment_api.log"
-    logger = setup_logger("sentiment_api", str(LOG_PATH), level=os.getenv("API_LOG_LEVEL", "INFO"))
+    LOG_PATH = Path(os.getenv("TARGET_REPO_PATH", os.getcwd())) / "new_feature.log"
+    logger = setup_logger("new_feature", str(LOG_PATH), level=os.getenv("API_LOG_LEVEL", "INFO"))
 
-    @app.route("/api/sentiment", methods=["POST"])
-    def sentiment():
-        data = request.get_json()
-        if not data or "text" not in data:
-            logger.warning("No text provided for sentiment analysis.")
-            return jsonify({"error": "Missing 'text' in request body"}), 400
-        text = data["text"]
-        result = analyze_sentiment(text)
-        logger.info(f"Sentiment analysis performed: {result}")
-        return jsonify(result), 200
+    @app.route("/api/execution-log-stats", methods=["GET"])
+    def execution_log_stats():
+        """API endpoint to get execution log statistics."""
+        stats = get_log_stats()
+        logger.info(f"Fetched execution log stats: {stats}")
+        return jsonify(stats)
 
     return app
 
 def new_feature():
-    """Run the sentiment analysis API server."""
-    app = create_sentiment_api()
-    app.run(host="0.0.0.0", port=5050)
+    '''Starts a Flask API to provide execution log statistics'''
+    app = create_stats_api()
+    port = int(os.getenv("NEW_FEATURE_PORT", 5050))
+    print(f"Starting Execution Log Stats API on port {port}...")
+    app.run(host="0.0.0.0", port=port)
 
 if __name__ == "__main__":
     new_feature()
