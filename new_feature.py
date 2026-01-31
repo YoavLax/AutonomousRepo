@@ -5,50 +5,56 @@ from logging_utils import setup_logger
 import sqlite3
 import datetime
 
-def get_log_stats(db_path: str = "execution_log.db"):
-    """Return statistics about the autonomous agent's execution log."""
-    if not os.path.exists(db_path):
-        return {"error": "Log database not found."}
+def log_sentiment_analysis(text: str, polarity: float, subjectivity: float, db_path: str = "execution_log.db"):
+    """Log sentiment analysis results to the execution log database."""
     conn = sqlite3.connect(db_path)
-    cursor = conn.cursor()
     try:
-        cursor.execute("SELECT COUNT(*) FROM execution_log")
-        total = cursor.fetchone()[0]
-        cursor.execute("SELECT level, COUNT(*) FROM execution_log GROUP BY level")
-        by_level = {row[0]: row[1] for row in cursor.fetchall()}
-        cursor.execute("SELECT MIN(timestamp), MAX(timestamp) FROM execution_log")
-        min_ts, max_ts = cursor.fetchone()
-        stats = {
-            "total_entries": total,
-            "by_level": by_level,
-            "first_entry": min_ts,
-            "last_entry": max_ts
-        }
-        return stats
-    except Exception as e:
-        return {"error": str(e)}
+        c = conn.cursor()
+        c.execute("""
+            CREATE TABLE IF NOT EXISTS sentiment_log (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                text TEXT,
+                polarity REAL,
+                subjectivity REAL,
+                timestamp TEXT
+            )
+        """)
+        c.execute("""
+            INSERT INTO sentiment_log (text, polarity, subjectivity, timestamp)
+            VALUES (?, ?, ?, ?)
+        """, (text, polarity, subjectivity, datetime.datetime.utcnow().isoformat()))
+        conn.commit()
     finally:
         conn.close()
 
-def create_log_stats_api():
-    """Create a Flask API endpoint to serve log statistics."""
-    app = Flask(__name__)
-    LOG_PATH = Path(os.getenv("TARGET_REPO_PATH", os.getcwd())) / "autonomous_agent.log"
-    logger = setup_logger("log_stats_api", str(LOG_PATH), level=os.getenv("API_LOG_LEVEL", "INFO"))
-
-    @app.route("/api/log-stats", methods=["GET"])
-    def log_stats():
-        db_path = request.args.get("db_path", "execution_log.db")
-        logger.info(f"Fetching log stats from {db_path}")
-        stats = get_log_stats(db_path)
-        return jsonify(stats)
-
-    return app
-
 def new_feature():
-    '''Run a Flask server exposing an endpoint for execution log statistics.'''
-    app = create_log_stats_api()
-    app.run(host="0.0.0.0", port=5050, debug=False)
+    '''Adds a Flask API endpoint for logging sentiment analysis results'''
+    app = Flask(__name__)
+    LOG_PATH = Path(os.getenv("TARGET_REPO_PATH", os.getcwd())) / "new_feature.log"
+    logger = setup_logger("new_feature", str(LOG_PATH), level=os.getenv("API_LOG_LEVEL", "INFO"))
+
+    @app.route("/api/log-sentiment", methods=["POST"])
+    def log_sentiment():
+        data = request.get_json()
+        if not data or "text" not in data or "polarity" not in data or "subjectivity" not in data:
+            logger.warning("Invalid request data: %s", data)
+            return jsonify({"error": "Missing required fields: text, polarity, subjectivity"}), 400
+        text = data["text"]
+        try:
+            polarity = float(data["polarity"])
+            subjectivity = float(data["subjectivity"])
+        except (ValueError, TypeError):
+            logger.warning("Invalid polarity/subjectivity values: %s", data)
+            return jsonify({"error": "Polarity and subjectivity must be numbers"}), 400
+        try:
+            log_sentiment_analysis(text, polarity, subjectivity)
+            logger.info("Logged sentiment for text: %s", text)
+            return jsonify({"status": "success"}), 200
+        except Exception as e:
+            logger.error("Failed to log sentiment: %s", str(e))
+            return jsonify({"error": "Failed to log sentiment"}), 500
+
+    app.run(host="0.0.0.0", port=5050)
 
 if __name__ == "__main__":
     new_feature()
