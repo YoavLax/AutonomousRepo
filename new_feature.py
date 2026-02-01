@@ -2,61 +2,52 @@ import os
 from flask import Flask, request, jsonify
 from pathlib import Path
 from logging_utils import setup_logger
-import sqlite3
-import datetime
+from textblob import TextBlob
 
-def get_db_connection(db_path: str = "execution_log.db"):
-    conn = sqlite3.connect(db_path)
-    conn.row_factory = sqlite3.Row
-    return conn
+def analyze_sentiment_batch(texts):
+    """
+    Analyze sentiment for a batch of texts.
+    Returns a list of dicts with polarity and subjectivity for each text.
+    """
+    results = []
+    for text in texts:
+        blob = TextBlob(text)
+        results.append({
+            "text": text,
+            "polarity": blob.sentiment.polarity,
+            "subjectivity": blob.sentiment.subjectivity
+        })
+    return results
 
-def fetch_recent_logs(limit: int = 10):
-    conn = get_db_connection()
-    try:
-        cur = conn.cursor()
-        cur.execute(
-            "SELECT timestamp, action, status, details FROM execution_logs ORDER BY timestamp DESC LIMIT ?",
-            (limit,)
-        )
-        rows = cur.fetchall()
-        logs = [
-            {
-                "timestamp": row["timestamp"],
-                "action": row["action"],
-                "status": row["status"],
-                "details": row["details"]
-            }
-            for row in rows
-        ]
-        return logs
-    finally:
-        conn.close()
-
-def create_logs_api():
+def create_sentiment_batch_api():
+    """
+    Create a Flask app with a /api/sentiment-batch endpoint for batch sentiment analysis.
+    """
     app = Flask(__name__)
-    LOG_PATH = Path(os.getenv("TARGET_REPO_PATH", os.getcwd())) / "new_feature.log"
-    logger = setup_logger("logs_api", str(LOG_PATH), level=os.getenv("API_LOG_LEVEL", "INFO"))
+    LOG_PATH = Path(os.getenv("TARGET_REPO_PATH", os.getcwd())) / "sentiment_batch_api.log"
+    logger = setup_logger("sentiment_batch_api", str(LOG_PATH), level=os.getenv("API_LOG_LEVEL", "INFO"))
 
-    @app.route("/api/recent-logs", methods=["GET"])
-    def recent_logs():
+    @app.route("/api/sentiment-batch", methods=["POST"])
+    def sentiment_batch():
         try:
-            limit = int(request.args.get("limit", 10))
-            logs = fetch_recent_logs(limit)
-            logger.info(f"Fetched {len(logs)} recent logs")
-            return jsonify({"logs": logs}), 200
+            data = request.get_json(force=True)
+            texts = data.get("texts")
+            if not isinstance(texts, list) or not all(isinstance(t, str) for t in texts):
+                logger.warning("Invalid input for batch sentiment analysis")
+                return jsonify({"error": "Input must be a JSON object with a 'texts' list of strings."}), 400
+            logger.info(f"Received batch of {len(texts)} texts for sentiment analysis")
+            results = analyze_sentiment_batch(texts)
+            return jsonify({"results": results}), 200
         except Exception as e:
-            logger.error(f"Error fetching logs: {e}")
-            return jsonify({"error": "Failed to fetch logs"}), 500
+            logger.error(f"Error in sentiment_batch: {e}")
+            return jsonify({"error": str(e)}), 500
 
     return app
 
 def new_feature():
-    """
-    Launches a Flask API endpoint at /api/recent-logs that returns the N most recent execution logs
-    from the autonomous agent's SQLite log database.
-    """
-    app = create_logs_api()
-    app.run(host="0.0.0.0", port=5050, debug=False)
+    '''Run the batch sentiment analysis API server'''
+    app = create_sentiment_batch_api()
+    app.run(host="0.0.0.0", port=int(os.getenv("SENTIMENT_BATCH_PORT", 5050)))
 
 if __name__ == "__main__":
     new_feature()
