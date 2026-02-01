@@ -1,44 +1,75 @@
 import os
-from flask import Flask, request, jsonify
-from pathlib import Path
-from logging_utils import setup_logger
-from textblob import TextBlob
+import sqlite3
+from datetime import datetime
+from typing import List, Dict, Any, Optional
 
-app = Flask(__name__)
-LOG_PATH = Path(os.getenv("TARGET_REPO_PATH", os.getcwd())) / "new_feature.log"
-logger = setup_logger("new_feature", str(LOG_PATH), level=os.getenv("API_LOG_LEVEL", "INFO"))
+DB_PATH = "execution_log.db"
 
-@app.route("/api/batch-sentiment", methods=["POST"])
-def batch_sentiment():
-    """
-    Accepts a JSON array of texts and returns their sentiment polarity and subjectivity.
-    Example input: {"texts": ["I love this!", "This is bad."]}
-    """
+def get_recent_executions(limit: int = 10) -> List[Dict[str, Any]]:
+    """Fetch the most recent execution log entries from the database."""
+    if not os.path.exists(DB_PATH):
+        return []
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
     try:
-        data = request.get_json(force=True)
-        texts = data.get("texts", [])
-        if not isinstance(texts, list) or not all(isinstance(t, str) for t in texts):
-            logger.warning("Invalid input for batch sentiment analysis")
-            return jsonify({"error": "Invalid input. 'texts' must be a list of strings."}), 400
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT * FROM execution_log ORDER BY timestamp DESC LIMIT ?",
+            (limit,)
+        )
+        rows = cur.fetchall()
+        return [dict(row) for row in rows]
+    finally:
+        conn.close()
 
-        results = []
-        for text in texts:
-            blob = TextBlob(text)
-            sentiment = blob.sentiment
-            results.append({
-                "text": text,
-                "polarity": sentiment.polarity,
-                "subjectivity": sentiment.subjectivity
-            })
-        logger.info(f"Batch sentiment analysis completed for {len(texts)} texts")
-        return jsonify({"results": results}), 200
-    except Exception as e:
-        logger.error(f"Error in batch_sentiment: {e}")
-        return jsonify({"error": str(e)}), 500
+def print_recent_executions(limit: int = 10):
+    """Print the most recent execution log entries in a readable format."""
+    logs = get_recent_executions(limit)
+    if not logs:
+        print("No execution logs found.")
+        return
+    print(f"Showing {len(logs)} most recent executions:")
+    for log in logs:
+        ts = log.get("timestamp", "")
+        action = log.get("action", "")
+        status = log.get("status", "")
+        details = log.get("details", "")
+        print(f"[{ts}] Action: {action} | Status: {status} | Details: {details}")
+
+def clear_execution_logs(confirm: bool = False):
+    """Clear all execution logs from the database."""
+    if not os.path.exists(DB_PATH):
+        print("No execution log database found.")
+        return
+    if not confirm:
+        print("Confirmation required to clear logs. Pass confirm=True to proceed.")
+        return
+    conn = sqlite3.connect(DB_PATH)
+    try:
+        cur = conn.cursor()
+        cur.execute("DELETE FROM execution_log")
+        conn.commit()
+        print("All execution logs have been cleared.")
+    finally:
+        conn.close()
 
 def new_feature():
-    '''Starts a Flask server with a batch sentiment analysis endpoint'''
-    app.run(host="0.0.0.0", port=5050, debug=False)
+    """
+    Feature: Execution Log Viewer & Cleaner
+    - View the N most recent execution logs from the autonomous agent's database.
+    - Optionally clear all logs with confirmation.
+    """
+    import argparse
+    parser = argparse.ArgumentParser(description="Execution Log Viewer & Cleaner")
+    parser.add_argument("--show", type=int, default=10, help="Show N most recent logs")
+    parser.add_argument("--clear", action="store_true", help="Clear all logs (requires --yes)")
+    parser.add_argument("--yes", action="store_true", help="Confirm clearing logs")
+    args = parser.parse_args()
+
+    if args.clear:
+        clear_execution_logs(confirm=args.yes)
+    else:
+        print_recent_executions(limit=args.show)
 
 if __name__ == "__main__":
     new_feature()
