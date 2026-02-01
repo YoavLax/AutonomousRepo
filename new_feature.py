@@ -1,75 +1,57 @@
 import os
-import sqlite3
-from datetime import datetime
-from typing import List, Dict, Any, Optional
+from flask import Flask, request, jsonify
+from pathlib import Path
+from logging_utils import setup_logger
+from textblob import TextBlob
 
-DB_PATH = "execution_log.db"
+app = Flask(__name__)
+LOG_PATH = Path(os.getenv("TARGET_REPO_PATH", os.getcwd())) / "new_feature.log"
+logger = setup_logger("new_feature", str(LOG_PATH), level=os.getenv("API_LOG_LEVEL", "INFO"))
 
-def get_recent_executions(limit: int = 10) -> List[Dict[str, Any]]:
-    """Fetch the most recent execution log entries from the database."""
-    if not os.path.exists(DB_PATH):
-        return []
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
-    try:
-        cur = conn.cursor()
-        cur.execute(
-            "SELECT * FROM execution_log ORDER BY timestamp DESC LIMIT ?",
-            (limit,)
-        )
-        rows = cur.fetchall()
-        return [dict(row) for row in rows]
-    finally:
-        conn.close()
-
-def print_recent_executions(limit: int = 10):
-    """Print the most recent execution log entries in a readable format."""
-    logs = get_recent_executions(limit)
-    if not logs:
-        print("No execution logs found.")
-        return
-    print(f"Showing {len(logs)} most recent executions:")
-    for log in logs:
-        ts = log.get("timestamp", "")
-        action = log.get("action", "")
-        status = log.get("status", "")
-        details = log.get("details", "")
-        print(f"[{ts}] Action: {action} | Status: {status} | Details: {details}")
-
-def clear_execution_logs(confirm: bool = False):
-    """Clear all execution logs from the database."""
-    if not os.path.exists(DB_PATH):
-        print("No execution log database found.")
-        return
-    if not confirm:
-        print("Confirmation required to clear logs. Pass confirm=True to proceed.")
-        return
-    conn = sqlite3.connect(DB_PATH)
-    try:
-        cur = conn.cursor()
-        cur.execute("DELETE FROM execution_log")
-        conn.commit()
-        print("All execution logs have been cleared.")
-    finally:
-        conn.close()
-
-def new_feature():
+@app.route("/api/sentiment-summary", methods=["POST"])
+def sentiment_summary():
     """
-    Feature: Execution Log Viewer & Cleaner
-    - View the N most recent execution logs from the autonomous agent's database.
-    - Optionally clear all logs with confirmation.
+    Accepts a list of texts and returns a summary of their sentiment analysis.
+    Example input: {"texts": ["I love this!", "This is terrible."]}
     """
-    import argparse
-    parser = argparse.ArgumentParser(description="Execution Log Viewer & Cleaner")
-    parser.add_argument("--show", type=int, default=10, help="Show N most recent logs")
-    parser.add_argument("--clear", action="store_true", help="Clear all logs (requires --yes)")
-    parser.add_argument("--yes", action="store_true", help="Confirm clearing logs")
-    args = parser.parse_args()
+    data = request.get_json(force=True)
+    texts = data.get("texts", [])
+    if not isinstance(texts, list) or not texts:
+        logger.error("Invalid or missing 'texts' in request")
+        return jsonify({"error": "Missing or invalid 'texts' list"}), 400
 
-    if args.clear:
-        clear_execution_logs(confirm=args.yes)
-    else:
-        print_recent_executions(limit=args.show)
+    results = []
+    for text in texts:
+        try:
+            blob = TextBlob(text)
+            polarity = blob.sentiment.polarity
+            subjectivity = blob.sentiment.subjectivity
+            sentiment = "positive" if polarity > 0.1 else "negative" if polarity < -0.1 else "neutral"
+            results.append({
+                "text": text,
+                "polarity": polarity,
+                "subjectivity": subjectivity,
+                "sentiment": sentiment
+            })
+        except Exception as e:
+            logger.error(f"Error analyzing text: {text} - {e}")
+            results.append({
+                "text": text,
+                "error": str(e)
+            })
+
+    summary = {
+        "total": len(results),
+        "positive": sum(1 for r in results if r.get("sentiment") == "positive"),
+        "negative": sum(1 for r in results if r.get("sentiment") == "negative"),
+        "neutral": sum(1 for r in results if r.get("sentiment") == "neutral"),
+        "details": results
+    }
+    logger.info(f"Sentiment summary computed for {len(texts)} texts")
+    return jsonify(summary), 200
+
+def run_server():
+    app.run(host="0.0.0.0", port=5050)
 
 if __name__ == "__main__":
-    new_feature()
+    run_server()
