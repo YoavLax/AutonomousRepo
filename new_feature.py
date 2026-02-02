@@ -2,40 +2,41 @@ import os
 from flask import Flask, request, jsonify
 from pathlib import Path
 from logging_utils import setup_logger
-import sqlite3
-import datetime
+from textblob import TextBlob
 
-def get_log_stats(db_path: str = "execution_log.db"):
-    """Return statistics about the execution log: total entries, last entry timestamp."""
-    if not os.path.exists(db_path):
-        return {"total_entries": 0, "last_entry": None}
-    conn = sqlite3.connect(db_path)
-    cursor = conn.cursor()
-    try:
-        cursor.execute("SELECT COUNT(*), MAX(timestamp) FROM execution_log")
-        total, last = cursor.fetchone()
-        return {"total_entries": total, "last_entry": last}
-    except sqlite3.Error:
-        return {"total_entries": 0, "last_entry": None}
-    finally:
-        conn.close()
+def analyze_sentiment(text: str) -> dict:
+    """Analyze sentiment of the given text using TextBlob."""
+    blob = TextBlob(text)
+    polarity = blob.sentiment.polarity
+    subjectivity = blob.sentiment.subjectivity
+    sentiment = "positive" if polarity > 0 else "negative" if polarity < 0 else "neutral"
+    return {
+        "sentiment": sentiment,
+        "polarity": polarity,
+        "subjectivity": subjectivity
+    }
 
-def create_stats_api():
+def create_app():
     app = Flask(__name__)
-    LOG_PATH = Path(os.getenv("TARGET_REPO_PATH", os.getcwd())) / "autonomous_agent_stats.log"
-    logger = setup_logger("stats_api", str(LOG_PATH), level=os.getenv("API_LOG_LEVEL", "INFO"))
+    LOG_PATH = Path(os.getenv("TARGET_REPO_PATH", os.getcwd())) / "sentiment_feature.log"
+    logger = setup_logger("sentiment_feature", str(LOG_PATH), level=os.getenv("API_LOG_LEVEL", "INFO"))
 
-    @app.route("/api/execution-log-stats", methods=["GET"])
-    def execution_log_stats():
-        stats = get_log_stats()
-        logger.info(f"Stats requested: {stats}")
-        return jsonify(stats)
+    @app.route("/api/sentiment", methods=["POST"])
+    def sentiment_api():
+        data = request.get_json()
+        if not data or "text" not in data:
+            logger.warning("No text provided for sentiment analysis.")
+            return jsonify({"error": "Missing 'text' in request body"}), 400
+        text = data["text"]
+        result = analyze_sentiment(text)
+        logger.info(f"Sentiment analysis performed: {result}")
+        return jsonify(result)
 
     return app
 
 def new_feature():
-    '''Starts a Flask API endpoint to provide execution log statistics'''
-    app = create_stats_api()
+    '''Run a Flask server exposing a /api/sentiment endpoint for sentiment analysis'''
+    app = create_app()
     app.run(host="0.0.0.0", port=5050)
 
 if __name__ == "__main__":
