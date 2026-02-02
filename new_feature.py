@@ -2,61 +2,57 @@ import os
 from flask import Flask, request, jsonify
 from pathlib import Path
 from logging_utils import setup_logger
-import sqlite3
-import datetime
+from textblob import TextBlob
 
-def get_db_connection(db_path: str = "execution_log.db"):
-    conn = sqlite3.connect(db_path)
-    conn.row_factory = sqlite3.Row
-    return conn
+app = Flask(__name__)
+LOG_PATH = Path(os.getenv("TARGET_REPO_PATH", os.getcwd())) / "new_feature.log"
+logger = setup_logger("new_feature", str(LOG_PATH), level=os.getenv("API_LOG_LEVEL", "INFO"))
 
-def fetch_recent_logs(limit: int = 10):
-    conn = get_db_connection()
-    try:
-        cur = conn.cursor()
-        cur.execute(
-            "SELECT timestamp, action, status, details FROM execution_logs ORDER BY timestamp DESC LIMIT ?",
-            (limit,)
-        )
-        rows = cur.fetchall()
-        logs = [
-            {
-                "timestamp": row["timestamp"],
-                "action": row["action"],
-                "status": row["status"],
-                "details": row["details"]
-            }
-            for row in rows
-        ]
-        return logs
-    finally:
-        conn.close()
+@app.route("/api/sentiment-summary", methods=["POST"])
+def sentiment_summary():
+    """
+    Accepts a list of texts and returns a summary of their sentiment analysis.
+    Example input: {"texts": ["I love this!", "This is terrible."]}
+    """
+    data = request.get_json(force=True)
+    texts = data.get("texts", [])
+    if not isinstance(texts, list) or not texts:
+        logger.error("Invalid input: 'texts' must be a non-empty list.")
+        return jsonify({"error": "Invalid input: 'texts' must be a non-empty list."}), 400
 
-def create_log_api():
-    app = Flask(__name__)
-    LOG_PATH = Path(os.getenv("TARGET_REPO_PATH", os.getcwd())) / "new_feature.log"
-    logger = setup_logger("log_api", str(LOG_PATH), level=os.getenv("API_LOG_LEVEL", "INFO"))
-
-    @app.route("/api/recent-logs", methods=["GET"])
-    def recent_logs():
+    results = []
+    for text in texts:
         try:
-            limit = int(request.args.get("limit", 10))
-            logs = fetch_recent_logs(limit)
-            logger.info(f"Fetched {len(logs)} recent logs")
-            return jsonify({"logs": logs}), 200
+            blob = TextBlob(text)
+            polarity = blob.sentiment.polarity
+            subjectivity = blob.sentiment.subjectivity
+            sentiment = "positive" if polarity > 0.1 else "negative" if polarity < -0.1 else "neutral"
+            results.append({
+                "text": text,
+                "polarity": polarity,
+                "subjectivity": subjectivity,
+                "sentiment": sentiment
+            })
         except Exception as e:
-            logger.error(f"Error fetching logs: {e}")
-            return jsonify({"error": "Failed to fetch logs"}), 500
+            logger.error(f"Error analyzing text: {text} - {str(e)}")
+            results.append({
+                "text": text,
+                "error": str(e)
+            })
 
-    return app
+    summary = {
+        "total": len(results),
+        "positive": sum(1 for r in results if r.get("sentiment") == "positive"),
+        "negative": sum(1 for r in results if r.get("sentiment") == "negative"),
+        "neutral": sum(1 for r in results if r.get("sentiment") == "neutral"),
+        "details": results
+    }
+    logger.info(f"Sentiment summary computed for {len(texts)} texts.")
+    return jsonify(summary), 200
 
 def new_feature():
-    """
-    Launches a Flask API endpoint at /api/recent-logs that returns the most recent execution logs
-    from the autonomous agent's SQLite database. Useful for monitoring and debugging.
-    """
-    app = create_log_api()
-    app.run(host="0.0.0.0", port=5050, debug=False)
+    '''Runs the sentiment summary Flask API endpoint'''
+    app.run(host="0.0.0.0", port=5050)
 
 if __name__ == "__main__":
     new_feature()
