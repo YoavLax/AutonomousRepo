@@ -2,56 +2,61 @@ import os
 from flask import Flask, request, jsonify
 from pathlib import Path
 from logging_utils import setup_logger
-from textblob import TextBlob
+import sqlite3
+import datetime
 
-app = Flask(__name__)
-LOG_PATH = Path(os.getenv("TARGET_REPO_PATH", os.getcwd())) / "new_feature.log"
-logger = setup_logger("new_feature", str(LOG_PATH), level=os.getenv("API_LOG_LEVEL", "INFO"))
+def get_recent_executions(limit: int = 10):
+    """Fetch recent execution logs from the autonomous agent's database."""
+    db_path = "execution_log.db"
+    if not os.path.exists(db_path):
+        return []
+    conn = sqlite3.connect(db_path)
+    cursor = conn.cursor()
+    try:
+        cursor.execute(
+            "SELECT id, timestamp, action, status, details FROM execution_log ORDER BY timestamp DESC LIMIT ?",
+            (limit,),
+        )
+        rows = cursor.fetchall()
+        return [
+            {
+                "id": row[0],
+                "timestamp": row[1],
+                "action": row[2],
+                "status": row[3],
+                "details": row[4],
+            }
+            for row in rows
+        ]
+    finally:
+        conn.close()
 
-@app.route("/api/sentiment-summary", methods=["POST"])
-def sentiment_summary():
-    """
-    Accepts a list of texts and returns a summary of their sentiment analysis.
-    Example input: { "texts": ["I love this!", "This is terrible."] }
-    """
-    data = request.get_json(force=True)
-    texts = data.get("texts", [])
-    if not isinstance(texts, list) or not texts:
-        logger.error("Invalid or empty 'texts' provided.")
-        return jsonify({"error": "Please provide a non-empty list of texts."}), 400
+def create_log_viewer_api():
+    """Create a Flask app to serve recent execution logs via API."""
+    app = Flask(__name__)
+    LOG_PATH = Path(os.getenv("TARGET_REPO_PATH", os.getcwd())) / "log_viewer.log"
+    logger = setup_logger("log_viewer", str(LOG_PATH), level=os.getenv("API_LOG_LEVEL", "INFO"))
 
-    results = []
-    for text in texts:
+    @app.route("/api/recent-executions", methods=["GET"])
+    def recent_executions():
         try:
-            blob = TextBlob(text)
-            polarity = blob.sentiment.polarity
-            subjectivity = blob.sentiment.subjectivity
-            sentiment = "positive" if polarity > 0.1 else "negative" if polarity < -0.1 else "neutral"
-            results.append({
-                "text": text,
-                "polarity": polarity,
-                "subjectivity": subjectivity,
-                "sentiment": sentiment
-            })
+            limit = int(request.args.get("limit", 10))
+            logs = get_recent_executions(limit)
+            logger.info(f"Fetched {len(logs)} recent executions.")
+            return jsonify({"success": True, "logs": logs})
         except Exception as e:
-            logger.error(f"Error analyzing text: {text} | {e}")
-            results.append({
-                "text": text,
-                "error": str(e)
-            })
+            logger.error(f"Error fetching recent executions: {e}")
+            return jsonify({"success": False, "error": str(e)}), 500
 
-    summary = {
-        "total": len(results),
-        "positive": sum(1 for r in results if r.get("sentiment") == "positive"),
-        "negative": sum(1 for r in results if r.get("sentiment") == "negative"),
-        "neutral": sum(1 for r in results if r.get("sentiment") == "neutral"),
-        "details": results
-    }
-    logger.info(f"Sentiment summary computed for {len(texts)} texts.")
-    return jsonify(summary), 200
+    return app
 
 def new_feature():
-    '''Starts the Flask app for sentiment summary API'''
+    """
+    Run a Flask server exposing a new API endpoint:
+    GET /api/recent-executions?limit=N
+    Returns the N most recent execution logs from the autonomous agent.
+    """
+    app = create_log_viewer_api()
     app.run(host="0.0.0.0", port=5050, debug=False)
 
 if __name__ == "__main__":
