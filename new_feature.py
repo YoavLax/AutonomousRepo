@@ -2,14 +2,24 @@ import os
 import sqlite3
 from datetime import datetime
 from typing import List, Dict, Any, Optional
+from autonomous_agent import ExecutionLog
 
-DB_PATH = "execution_log.db"
+def summarize_recent_executions(limit: int = 10) -> List[Dict[str, Any]]:
+    """
+    Summarize the most recent executions from the execution log database.
 
-def get_recent_executions(limit: int = 10) -> List[Dict[str, Any]]:
-    """Fetch the most recent execution log entries from the database."""
-    if not os.path.exists(DB_PATH):
+    Args:
+        limit (int): Number of recent executions to summarize.
+
+    Returns:
+        List[Dict[str, Any]]: List of execution summaries.
+    """
+    db_path = "execution_log.db"
+    if not os.path.exists(db_path):
+        print("No execution log database found.")
         return []
-    conn = sqlite3.connect(DB_PATH)
+
+    conn = sqlite3.connect(db_path)
     cursor = conn.cursor()
     try:
         cursor.execute("""
@@ -19,34 +29,35 @@ def get_recent_executions(limit: int = 10) -> List[Dict[str, Any]]:
             LIMIT ?
         """, (limit,))
         rows = cursor.fetchall()
-        result = []
+        summaries = []
         for row in rows:
-            result.append({
+            summaries.append({
                 "id": row[0],
                 "timestamp": row[1],
                 "action": row[2],
                 "status": row[3],
                 "details": row[4]
             })
-        return result
+        return summaries
     finally:
         conn.close()
 
-def print_recent_executions(limit: int = 10):
-    """Print the most recent execution log entries in a readable format."""
-    logs = get_recent_executions(limit)
-    if not logs:
-        print("No execution logs found.")
+def print_execution_summary(limit: int = 10):
+    """
+    Print a summary of recent executions to the console.
+    """
+    summaries = summarize_recent_executions(limit)
+    if not summaries:
+        print("No recent executions found.")
         return
-    print(f"Last {len(logs)} execution log entries:")
-    for log in logs:
-        print(f"[{log['timestamp']}] (ID: {log['id']}) Action: {log['action']} | Status: {log['status']}")
-        if log['details']:
-            print(f"  Details: {log['details']}")
+    print(f"{'ID':<5} {'Timestamp':<20} {'Action':<30} {'Status':<10} Details")
+    print("-" * 80)
+    for entry in summaries:
+        print(f"{entry['id']:<5} {entry['timestamp']:<20} {entry['action']:<30} {entry['status']:<10} {entry['details'][:40]}")
 
 def new_feature():
-    '''Show the 10 most recent execution log entries from the autonomous agent's log database.'''
-    print_recent_executions(10)
+    '''Summarize and print the most recent execution log entries'''
+    print_execution_summary(10)
 
 if __name__ == "__main__":
     new_feature()
