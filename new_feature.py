@@ -2,46 +2,56 @@ import os
 from flask import Flask, request, jsonify
 from pathlib import Path
 from logging_utils import setup_logger
-from textblob import TextBlob
+import sqlite3
+import datetime
 
-app = Flask(__name__)
-LOG_PATH = Path(os.getenv("TARGET_REPO_PATH", os.getcwd())) / "autonomous_agent.log"
-logger = setup_logger("new_feature", str(LOG_PATH), level=os.getenv("API_LOG_LEVEL", "INFO"))
+def log_user_feedback(user_id: str, feedback: str, db_path: str = "user_feedback.db") -> None:
+    """Logs user feedback into a SQLite database."""
+    conn = sqlite3.connect(db_path)
+    c = conn.cursor()
+    c.execute("""
+        CREATE TABLE IF NOT EXISTS feedback (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id TEXT NOT NULL,
+            feedback TEXT NOT NULL,
+            timestamp TEXT NOT NULL
+        )
+    """)
+    c.execute(
+        "INSERT INTO feedback (user_id, feedback, timestamp) VALUES (?, ?, ?)",
+        (user_id, feedback, datetime.datetime.utcnow().isoformat())
+    )
+    conn.commit()
+    conn.close()
 
-@app.route("/api/batch-sentiment", methods=["POST"])
-def batch_sentiment():
-    """
-    Accepts a JSON array of texts and returns their sentiment polarity and subjectivity.
-    Example input: {"texts": ["I love this!", "This is bad."]}
-    """
-    data = request.get_json()
-    if not data or "texts" not in data or not isinstance(data["texts"], list):
-        logger.error("Invalid input for batch sentiment analysis")
-        return jsonify({"error": "Invalid input. Provide a JSON object with a 'texts' list."}), 400
+def create_feedback_api():
+    """Creates a Flask API endpoint for collecting user feedback."""
+    app = Flask(__name__)
+    LOG_PATH = Path(os.getenv("TARGET_REPO_PATH", os.getcwd())) / "user_feedback.log"
+    logger = setup_logger("user_feedback_api", str(LOG_PATH), level=os.getenv("API_LOG_LEVEL", "INFO"))
 
-    results = []
-    for text in data["texts"]:
+    @app.route("/api/submit-feedback", methods=["POST"])
+    def submit_feedback():
+        data = request.get_json()
+        user_id = data.get("user_id")
+        feedback = data.get("feedback")
+        if not user_id or not feedback:
+            logger.warning("Missing user_id or feedback in request")
+            return jsonify({"error": "user_id and feedback are required"}), 400
         try:
-            blob = TextBlob(text)
-            sentiment = blob.sentiment
-            results.append({
-                "text": text,
-                "polarity": sentiment.polarity,
-                "subjectivity": sentiment.subjectivity
-            })
+            log_user_feedback(user_id, feedback)
+            logger.info(f"Feedback received from user {user_id}")
+            return jsonify({"status": "success"}), 200
         except Exception as e:
-            logger.error(f"Error analyzing text: {text} | {e}")
-            results.append({
-                "text": text,
-                "error": str(e)
-            })
+            logger.error(f"Error logging feedback: {e}")
+            return jsonify({"error": "Failed to log feedback"}), 500
 
-    logger.info(f"Batch sentiment analysis completed for {len(data['texts'])} texts.")
-    return jsonify({"results": results})
+    return app
 
 def new_feature():
-    '''Starts the Flask app to provide batch sentiment analysis API'''
-    app.run(host="0.0.0.0", port=5001, debug=False)
+    """Runs the user feedback API server."""
+    app = create_feedback_api()
+    app.run(host="0.0.0.0", port=5050)
 
 if __name__ == "__main__":
     new_feature()
