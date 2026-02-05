@@ -1,79 +1,48 @@
 import os
-import sqlite3
-from datetime import datetime
-from typing import List, Dict, Any, Optional
+from flask import Flask, request, jsonify
+from pathlib import Path
+from logging_utils import setup_logger
+from textblob import TextBlob
 
-from autonomous_agent import ExecutionLog
+app = Flask(__name__)
+LOG_PATH = Path(os.getenv("TARGET_REPO_PATH", os.getcwd())) / "new_feature.log"
+logger = setup_logger("new_feature", str(LOG_PATH), level=os.getenv("API_LOG_LEVEL", "INFO"))
 
-def get_recent_executions(limit: int = 10) -> List[Dict[str, Any]]:
+@app.route("/api/batch-sentiment", methods=["POST"])
+def batch_sentiment():
     """
-    Retrieve the most recent execution log entries from the database.
+    Accepts a JSON array of texts and returns their sentiment analysis.
+    Example input: {"texts": ["I love this!", "This is bad."]}
+    Example output: {"results": [{"text": "...", "polarity": 0.5, "subjectivity": 0.6}, ...]}
     """
-    db_path = "execution_log.db"
-    if not os.path.exists(db_path):
-        return []
-    conn = sqlite3.connect(db_path)
-    cursor = conn.cursor()
-    try:
-        cursor.execute("""
-            SELECT id, timestamp, action, status, details
-            FROM execution_log
-            ORDER BY timestamp DESC
-            LIMIT ?
-        """, (limit,))
-        rows = cursor.fetchall()
-        result = []
-        for row in rows:
-            result.append({
-                "id": row[0],
-                "timestamp": row[1],
-                "action": row[2],
-                "status": row[3],
-                "details": row[4]
+    data = request.get_json(force=True)
+    texts = data.get("texts", [])
+    if not isinstance(texts, list):
+        logger.error("Invalid input: texts must be a list.")
+        return jsonify({"error": "Invalid input: texts must be a list."}), 400
+
+    results = []
+    for text in texts:
+        try:
+            blob = TextBlob(text)
+            result = {
+                "text": text,
+                "polarity": blob.sentiment.polarity,
+                "subjectivity": blob.sentiment.subjectivity
+            }
+            results.append(result)
+        except Exception as e:
+            logger.error(f"Error processing text '{text}': {e}")
+            results.append({
+                "text": text,
+                "error": str(e)
             })
-        return result
-    finally:
-        conn.close()
-
-def print_recent_executions(limit: int = 10):
-    """
-    Print the most recent execution log entries in a readable format.
-    """
-    entries = get_recent_executions(limit)
-    if not entries:
-        print("No execution log entries found.")
-        return
-    print(f"Last {len(entries)} execution log entries:")
-    for entry in entries:
-        print(f"[{entry['timestamp']}] (ID: {entry['id']}) {entry['action']} - {entry['status']}")
-        if entry['details']:
-            print(f"  Details: {entry['details']}")
-
-def log_custom_action(action: str, status: str, details: Optional[str] = None):
-    """
-    Log a custom action to the execution log.
-    """
-    log = ExecutionLog()
-    log.log_action(action, status, details or "")
+    logger.info(f"Processed batch sentiment for {len(texts)} texts.")
+    return jsonify({"results": results})
 
 def new_feature():
-    '''Feature: View and log recent execution actions for the autonomous agent'''
-    import argparse
-    parser = argparse.ArgumentParser(description="Execution Log Utility")
-    parser.add_argument("--show", action="store_true", help="Show recent execution log entries")
-    parser.add_argument("--log", nargs=2, metavar=("ACTION", "STATUS"), help="Log a custom action with status")
-    parser.add_argument("--details", type=str, default="", help="Details for the custom log action")
-    parser.add_argument("--limit", type=int, default=10, help="Number of entries to show")
-    args = parser.parse_args()
-
-    if args.show:
-        print_recent_executions(args.limit)
-    elif args.log:
-        action, status = args.log
-        log_custom_action(action, status, args.details)
-        print(f"Logged action '{action}' with status '{status}'.")
-    else:
-        parser.print_help()
+    '''Starts the Flask app for batch sentiment analysis'''
+    app.run(host="0.0.0.0", port=5050)
 
 if __name__ == "__main__":
     new_feature()
