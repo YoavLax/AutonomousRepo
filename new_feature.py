@@ -2,43 +2,33 @@ import os
 from flask import Flask, request, jsonify
 from pathlib import Path
 from logging_utils import setup_logger
-from textblob import TextBlob
+import sqlite3
+import datetime
 
-app = Flask(__name__)
-LOG_PATH = Path(os.getenv("TARGET_REPO_PATH", os.getcwd())) / "new_feature.log"
-logger = setup_logger("new_feature", str(LOG_PATH), level=os.getenv("NEW_FEATURE_LOG_LEVEL", "INFO"))
-
-@app.route("/api/batch-sentiment", methods=["POST"])
-def batch_sentiment():
-    """
-    Accepts a JSON array of texts and returns their sentiment analysis.
-    Example input: {"texts": ["I love this!", "This is terrible."]}
-    """
+def get_log_stats(db_path: str = "execution_log.db"):
+    """Fetch summary statistics from the execution log database."""
+    if not os.path.exists(db_path):
+        return {"error": "Log database not found."}
     try:
-        data = request.get_json()
-        texts = data.get("texts", [])
-        if not isinstance(texts, list):
-            logger.error("Invalid input: texts must be a list")
-            return jsonify({"error": "Invalid input: texts must be a list"}), 400
-
-        results = []
-        for text in texts:
-            blob = TextBlob(text)
-            sentiment = blob.sentiment
-            results.append({
-                "text": text,
-                "polarity": sentiment.polarity,
-                "subjectivity": sentiment.subjectivity
-            })
-        logger.info(f"Batch sentiment analysis completed for {len(texts)} texts")
-        return jsonify({"results": results}), 200
+        conn = sqlite3.connect(db_path)
+        cursor = conn.cursor()
+        cursor.execute("SELECT COUNT(*) FROM execution_log")
+        total_entries = cursor.fetchone()[0]
+        cursor.execute("SELECT level, COUNT(*) FROM execution_log GROUP BY level")
+        level_counts = {row[0]: row[1] for row in cursor.fetchall()}
+        cursor.execute("SELECT MIN(timestamp), MAX(timestamp) FROM execution_log")
+        min_ts, max_ts = cursor.fetchone()
+        conn.close()
+        return {
+            "total_entries": total_entries,
+            "level_counts": level_counts,
+            "first_entry": min_ts,
+            "last_entry": max_ts
+        }
     except Exception as e:
-        logger.exception("Error in batch_sentiment")
-        return jsonify({"error": str(e)}), 500
+        return {"error": str(e)}
 
-def new_feature():
-    '''Starts a Flask server with a batch sentiment analysis endpoint'''
-    app.run(host="0.0.0.0", port=5001)
-
-if __name__ == "__main__":
-    new_feature()
+def create_log_stats_api():
+    """Create a Flask app exposing an endpoint for log statistics."""
+    app = Flask(__name__)
+    LOG_PATH = Path(os.getenv("TARGET_REPO_PATH", os.getcwd())) / "aut
