@@ -1,28 +1,28 @@
 import os
 from flask import Flask, request, jsonify
+from pathlib import Path
 from logging_utils import setup_logger
 from textblob import TextBlob
 
 app = Flask(__name__)
-LOG_PATH = os.path.join(os.getcwd(), "new_feature.log")
-logger = setup_logger("new_feature", LOG_PATH, level="INFO")
+LOG_PATH = Path(os.getenv("TARGET_REPO_PATH", os.getcwd())) / "new_feature.log"
+logger = setup_logger("new_feature", str(LOG_PATH), level=os.getenv("NEW_FEATURE_LOG_LEVEL", "INFO"))
 
 @app.route("/api/batch-sentiment", methods=["POST"])
 def batch_sentiment():
     """
     Accepts a JSON array of texts and returns their sentiment analysis.
-    Example input: {"texts": ["I love this!", "This is bad."]}
-    Example output: {"results": [{"text": "...", "polarity": 0.5, "subjectivity": 0.6}, ...]}
+    Example input: {"texts": ["I love this!", "This is terrible."]}
     """
-    data = request.get_json(force=True)
-    texts = data.get("texts", [])
-    if not isinstance(texts, list) or not texts:
-        logger.error("Invalid input for batch sentiment analysis.")
-        return jsonify({"error": "Input must be a non-empty list of texts."}), 400
+    try:
+        data = request.get_json()
+        texts = data.get("texts", [])
+        if not isinstance(texts, list):
+            logger.error("Invalid input: texts must be a list")
+            return jsonify({"error": "Invalid input: texts must be a list"}), 400
 
-    results = []
-    for text in texts:
-        try:
+        results = []
+        for text in texts:
             blob = TextBlob(text)
             sentiment = blob.sentiment
             results.append({
@@ -30,18 +30,15 @@ def batch_sentiment():
                 "polarity": sentiment.polarity,
                 "subjectivity": sentiment.subjectivity
             })
-        except Exception as e:
-            logger.error(f"Error analyzing text: {text} | {e}")
-            results.append({
-                "text": text,
-                "error": str(e)
-            })
-    logger.info(f"Batch sentiment analysis completed for {len(texts)} texts.")
-    return jsonify({"results": results})
+        logger.info(f"Batch sentiment analysis completed for {len(texts)} texts")
+        return jsonify({"results": results}), 200
+    except Exception as e:
+        logger.exception("Error in batch_sentiment")
+        return jsonify({"error": str(e)}), 500
 
 def new_feature():
-    '''Runs the Flask app for batch sentiment analysis'''
-    app.run(host="0.0.0.0", port=5050, debug=False)
+    '''Starts a Flask server with a batch sentiment analysis endpoint'''
+    app.run(host="0.0.0.0", port=5001)
 
 if __name__ == "__main__":
     new_feature()
