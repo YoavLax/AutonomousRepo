@@ -11,7 +11,7 @@ logger = setup_logger("new_feature", str(LOG_PATH), level=os.getenv("API_LOG_LEV
 @app.route("/api/batch-sentiment", methods=["POST"])
 def batch_sentiment():
     """
-    Accepts a JSON array of texts and returns their sentiment polarity and subjectivity.
+    Accepts a JSON array of texts and returns their sentiment analysis.
     Example input: {"texts": ["I love this!", "This is terrible."]}
     """
     try:
