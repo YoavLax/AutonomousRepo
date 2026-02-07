@@ -11,15 +11,15 @@ logger = setup_logger("new_feature", str(LOG_PATH), level=os.getenv("API_LOG_LEV
 @app.route("/api/batch-sentiment", methods=["POST"])
 def batch_sentiment():
     """
-    Accepts a JSON array of texts and returns their sentiment analysis.
+    Accepts a JSON array of texts and returns sentiment analysis for each.
     Example input: {"texts": ["I love this!", "This is terrible."]}
     """
     try:
         data = request.get_json()
         texts = data.get("texts", [])
-        if not isinstance(texts, list) or not texts:
-            logger.error("Invalid input: texts must be a non-empty list.")
-            return jsonify({"error": "Invalid input. 'texts' must be a non-empty list."}), 400
+        if not isinstance(texts, list):
+            logger.error("Invalid input: texts must be a list")
+            return jsonify({"error": "Invalid input: texts must be a list"}), 400
 
         results = []
         for text in texts:
@@ -30,10 +30,10 @@ def batch_sentiment():
                 "polarity": sentiment.polarity,
                 "subjectivity": sentiment.subjectivity
             })
-        logger.info(f"Batch sentiment analysis completed for {len(texts)} texts.")
+        logger.info(f"Batch sentiment analysis completed for {len(texts)} texts")
         return jsonify({"results": results}), 200
     except Exception as e:
-        logger.exception("Error in batch_sentiment endpoint.")
+        logger.error(f"Error in batch_sentiment: {str(e)}")
         return jsonify({"error": str(e)}), 500
 
 def new_feature():
