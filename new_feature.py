@@ -3,48 +3,67 @@ from flask import Flask, request, jsonify
 from pathlib import Path
 from logging_utils import setup_logger
 from textblob import TextBlob
+import sqlite3
+import datetime
 
-def analyze_sentiment_batch(texts):
+def analyze_sentiment_and_log():
     """
-    Analyze sentiment for a batch of texts.
-    Returns a list of dicts with polarity and subjectivity for each text.
+    Flask API endpoint to analyze sentiment of user-submitted text,
+    log the request and result to a local SQLite database, and return the sentiment.
     """
-    results = []
-    for text in texts:
-        blob = TextBlob(text)
-        sentiment = blob.sentiment
-        results.append({
-            "text": text,
-            "polarity": sentiment.polarity,
-            "subjectivity": sentiment.subjectivity
-        })
-    return results
-
-def create_app():
     app = Flask(__name__)
-    LOG_PATH = Path(os.getenv("TARGET_REPO_PATH", os.getcwd())) / "batch_sentiment.log"
-    logger = setup_logger("batch_sentiment_api", str(LOG_PATH), level=os.getenv("API_LOG_LEVEL", "INFO"))
+    LOG_PATH = Path(os.getenv("TARGET_REPO_PATH", os.getcwd())) / "sentiment_feature.log"
+    logger = setup_logger("sentiment_feature", str(LOG_PATH), level=os.getenv("API_LOG_LEVEL", "INFO"))
+    DB_PATH = Path(os.getenv("TARGET_REPO_PATH", os.getcwd())) / "sentiment_requests.db"
 
-    @app.route("/api/batch-sentiment", methods=["POST"])
-    def batch_sentiment():
-        """
-        Accepts a JSON payload with a list of texts and returns their sentiment analysis.
-        Example input: {"texts": ["I love this!", "This is bad."]}
-        """
+    def init_db():
+        conn = sqlite3.connect(DB_PATH)
+        c = conn.cursor()
+        c.execute("""
+            CREATE TABLE IF NOT EXISTS sentiment_requests (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                text TEXT NOT NULL,
+                polarity REAL,
+                subjectivity REAL,
+                timestamp TEXT
+            )
+        """)
+        conn.commit()
+        conn.close()
+
+    @app.route("/api/analyze-sentiment", methods=["POST"])
+    def analyze_sentiment():
         data = request.get_json()
-        if not data or "texts" not in data or not isinstance(data["texts"], list):
-            logger.warning("Invalid input for batch sentiment analysis")
-            return jsonify({"error": "Invalid input. Provide a JSON with a 'texts' list."}), 400
-        results = analyze_sentiment_batch(data["texts"])
-        logger.info(f"Processed batch sentiment for {len(data['texts'])} texts")
-        return jsonify({"results": results})
+        if not data or "text" not in data:
+            logger.warning("No text provided in request")
+            return jsonify({"error": "No text provided"}), 400
+        text = data["text"]
+        try:
+            blob = TextBlob(text)
+            polarity = float(blob.sentiment.polarity)
+            subjectivity = float(blob.sentiment.subjectivity)
+            timestamp = datetime.datetime.utcnow().isoformat()
+            conn = sqlite3.connect(DB_PATH)
+            c = conn.cursor()
+            c.execute(
+                "INSERT INTO sentiment_requests (text, polarity, subjectivity, timestamp) VALUES (?, ?, ?, ?)",
+                (text, polarity, subjectivity, timestamp)
+            )
+            conn.commit()
+            conn.close()
+            logger.info(f"Sentiment analyzed for text: {text[:30]}... Polarity: {polarity}, Subjectivity: {subjectivity}")
+            return jsonify({
+                "text": text,
+                "polarity": polarity,
+                "subjectivity": subjectivity,
+                "timestamp": timestamp
+            })
+        except Exception as e:
+            logger.error(f"Error analyzing sentiment: {e}")
+            return jsonify({"error": "Failed to analyze sentiment"}), 500
 
-    return app
-
-def new_feature():
-    '''Run a Flask server providing batch sentiment analysis API'''
-    app = create_app()
+    init_db()
     app.run(host="0.0.0.0", port=5050)
 
 if __name__ == "__main__":
-    new_feature()
+    analyze_sentiment_and_log()
