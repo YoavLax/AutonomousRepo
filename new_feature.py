@@ -2,68 +2,54 @@ import os
 from flask import Flask, request, jsonify
 from pathlib import Path
 from logging_utils import setup_logger
-from textblob import TextBlob
 import sqlite3
 import datetime
 
-def analyze_sentiment_and_log():
-    """
-    Flask API endpoint to analyze sentiment of user-submitted text,
-    log the request and result to a local SQLite database, and return the sentiment.
-    """
-    app = Flask(__name__)
-    LOG_PATH = Path(os.getenv("TARGET_REPO_PATH", os.getcwd())) / "sentiment_feature.log"
-    logger = setup_logger("sentiment_feature", str(LOG_PATH), level=os.getenv("API_LOG_LEVEL", "INFO"))
-    DB_PATH = Path(os.getenv("TARGET_REPO_PATH", os.getcwd())) / "sentiment_requests.db"
-
-    def init_db():
-        conn = sqlite3.connect(DB_PATH)
-        c = conn.cursor()
-        c.execute("""
-            CREATE TABLE IF NOT EXISTS sentiment_requests (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                text TEXT NOT NULL,
-                polarity REAL,
-                subjectivity REAL,
-                timestamp TEXT NOT NULL
-            )
-        """)
-        conn.commit()
+def get_log_stats(db_path: str = "execution_log.db"):
+    """Return statistics about the autonomous agent's execution log."""
+    if not os.path.exists(db_path):
+        return {"error": "Log database not found."}
+    conn = sqlite3.connect(db_path)
+    cursor = conn.cursor()
+    try:
+        cursor.execute("SELECT COUNT(*) FROM execution_log")
+        total = cursor.fetchone()[0]
+        cursor.execute("SELECT status, COUNT(*) FROM execution_log GROUP BY status")
+        status_counts = {row[0]: row[1] for row in cursor.fetchall()}
+        cursor.execute("SELECT MIN(timestamp), MAX(timestamp) FROM execution_log")
+        min_ts, max_ts = cursor.fetchone()
+        stats = {
+            "total_executions": total,
+            "status_counts": status_counts,
+            "first_execution": min_ts,
+            "last_execution": max_ts
+        }
+        return stats
+    except Exception as e:
+        return {"error": str(e)}
+    finally:
         conn.close()
 
-    @app.route("/api/analyze-sentiment", methods=["POST"])
-    def analyze_sentiment():
-        data = request.get_json()
-        if not data or "text" not in data:
-            logger.warning("No text provided in request")
-            return jsonify({"error": "No text provided"}), 400
-        text = data["text"]
-        blob = TextBlob(text)
-        polarity = blob.sentiment.polarity
-        subjectivity = blob.sentiment.subjectivity
-        timestamp = datetime.datetime.utcnow().isoformat()
-        try:
-            conn = sqlite3.connect(DB_PATH)
-            c = conn.cursor()
-            c.execute(
-                "INSERT INTO sentiment_requests (text, polarity, subjectivity, timestamp) VALUES (?, ?, ?, ?)",
-                (text, polarity, subjectivity, timestamp)
-            )
-            conn.commit()
-            conn.close()
-            logger.info(f"Logged sentiment analysis for text: {text[:30]}...")
-        except Exception as e:
-            logger.error(f"Failed to log sentiment: {e}")
-            return jsonify({"error": "Failed to log sentiment"}), 500
-        return jsonify({
-            "text": text,
-            "polarity": polarity,
-            "subjectivity": subjectivity,
-            "timestamp": timestamp
-        })
+def create_stats_api():
+    app = Flask(__name__)
+    LOG_PATH = Path(os.getenv("TARGET_REPO_PATH", os.getcwd())) / "autonomous_agent_stats.log"
+    logger = setup_logger("stats_api", str(LOG_PATH), level=os.getenv("API_LOG_LEVEL", "INFO"))
 
-    init_db()
-    app.run(host="0.0.0.0", port=5050)
+    @app.route("/api/agent-log-stats", methods=["GET"])
+    def agent_log_stats():
+        stats = get_log_stats()
+        if "error" in stats:
+            logger.error(f"Failed to get log stats: {stats['error']}")
+            return jsonify({"error": stats["error"]}), 500
+        logger.info("Returned agent log stats")
+        return jsonify(stats)
+
+    return app
+
+def new_feature():
+    '''Run a Flask API server that exposes autonomous agent execution log statistics'''
+    app = create_stats_api()
+    app.run(host="0.0.0.0", port=5050, debug=False)
 
 if __name__ == "__main__":
-    analyze_sentiment_and_log()
+    new_feature()
