@@ -5,43 +5,48 @@ from logging_utils import setup_logger
 import sqlite3
 import datetime
 
-def get_db_connection(db_path: str = "execution_log.db"):
+def log_sentiment_analysis(user_input: str, sentiment: str, polarity: float, db_path: str = "sentiment_log.db") -> None:
+    """Log sentiment analysis results to a SQLite database."""
     conn = sqlite3.connect(db_path)
-    conn.row_factory = sqlite3.Row
-    return conn
-
-def fetch_recent_executions(limit: int = 10):
-    conn = get_db_connection()
-    try:
-        cur = conn.cursor()
-        cur.execute(
-            "SELECT id, timestamp, action, status, details FROM execution_log ORDER BY timestamp DESC LIMIT ?",
-            (limit,)
+    c = conn.cursor()
+    c.execute("""
+        CREATE TABLE IF NOT EXISTS sentiment_log (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            timestamp TEXT,
+            user_input TEXT,
+            sentiment TEXT,
+            polarity REAL
         )
-        rows = cur.fetchall()
-        return [dict(row) for row in rows]
-    finally:
-        conn.close()
+    """)
+    c.execute(
+        "INSERT INTO sentiment_log (timestamp, user_input, sentiment, polarity) VALUES (?, ?, ?, ?)",
+        (datetime.datetime.utcnow().isoformat(), user_input, sentiment, polarity)
+    )
+    conn.commit()
+    conn.close()
 
 def new_feature():
-    """
-    Flask API endpoint to fetch the most recent execution logs from the autonomous agent.
-    Extends the project by providing visibility into recent agent actions for monitoring/debugging.
-    """
+    '''Adds a Flask API endpoint for logging sentiment analysis results'''
     app = Flask(__name__)
     LOG_PATH = Path(os.getenv("TARGET_REPO_PATH", os.getcwd())) / "new_feature.log"
     logger = setup_logger("new_feature", str(LOG_PATH), level=os.getenv("API_LOG_LEVEL", "INFO"))
 
-    @app.route("/api/recent-executions", methods=["GET"])
-    def recent_executions():
+    @app.route("/api/log-sentiment", methods=["POST"])
+    def log_sentiment():
+        data = request.get_json()
+        user_input = data.get("user_input")
+        sentiment = data.get("sentiment")
+        polarity = data.get("polarity")
+        if not all([user_input, sentiment, polarity is not None]):
+            logger.warning("Missing required fields in request")
+            return jsonify({"error": "Missing required fields"}), 400
         try:
-            limit = int(request.args.get("limit", 10))
-            logs = fetch_recent_executions(limit)
-            logger.info(f"Fetched {len(logs)} recent executions.")
-            return jsonify({"success": True, "logs": logs})
+            log_sentiment_analysis(user_input, sentiment, float(polarity))
+            logger.info(f"Logged sentiment for input: {user_input[:30]}...")
+            return jsonify({"status": "success"}), 200
         except Exception as e:
-            logger.error(f"Error fetching recent executions: {e}")
-            return jsonify({"success": False, "error": str(e)}), 500
+            logger.error(f"Failed to log sentiment: {e}")
+            return jsonify({"error": "Failed to log sentiment"}), 500
 
     app.run(host="0.0.0.0", port=5050)
 
