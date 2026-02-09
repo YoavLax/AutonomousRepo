@@ -12,10 +12,11 @@ def analyze_sentiment_batch(texts):
     results = []
     for text in texts:
         blob = TextBlob(text)
+        sentiment = blob.sentiment
         results.append({
             "text": text,
-            "polarity": blob.sentiment.polarity,
-            "subjectivity": blob.sentiment.subjectivity
+            "polarity": sentiment.polarity,
+            "subjectivity": sentiment.subjectivity
         })
     return results
 
@@ -28,12 +29,12 @@ def create_app():
     def batch_sentiment():
         """
         Accepts a JSON payload with a list of texts and returns their sentiment analysis.
-        Example input: { "texts": ["I love this!", "This is bad."] }
+        Example input: {"texts": ["I love this!", "This is bad."]}
         """
         data = request.get_json()
         if not data or "texts" not in data or not isinstance(data["texts"], list):
             logger.warning("Invalid input for batch sentiment analysis")
-            return jsonify({"error": "Invalid input. Provide a JSON object with a 'texts' list."}), 400
+            return jsonify({"error": "Invalid input. Provide a JSON with a 'texts' list."}), 400
         results = analyze_sentiment_batch(data["texts"])
         logger.info(f"Processed batch sentiment for {len(data['texts'])} texts")
         return jsonify({"results": results})
@@ -43,7 +44,7 @@ def create_app():
 def new_feature():
     '''Run a Flask server providing batch sentiment analysis API'''
     app = create_app()
-    app.run(host="0.0.0.0", port=int(os.getenv("BATCH_SENTIMENT_PORT", 5050)))
+    app.run(host="0.0.0.0", port=5050)
 
 if __name__ == "__main__":
     new_feature()
