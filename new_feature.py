@@ -1,54 +1,55 @@
 import os
-from flask import Flask, request, jsonify
-from pathlib import Path
-from logging_utils import setup_logger
 import sqlite3
-import datetime
+from datetime import datetime
+from typing import List, Dict, Any, Optional
+from autonomous_agent import ExecutionLog
 
-def log_sentiment_analysis(user_input: str, sentiment: str, polarity: float, db_path: str = "sentiment_log.db") -> None:
-    """Log sentiment analysis results to a SQLite database."""
+def export_execution_log_to_csv(db_path: str = "execution_log.db", csv_path: str = "execution_log_export.csv") -> None:
+    """
+    Export all execution log entries from the SQLite database to a CSV file.
+    """
+    if not os.path.exists(db_path):
+        print(f"Database file '{db_path}' does not exist.")
+        return
+
     conn = sqlite3.connect(db_path)
-    c = conn.cursor()
-    c.execute("""
-        CREATE TABLE IF NOT EXISTS sentiment_log (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            timestamp TEXT,
-            user_input TEXT,
-            sentiment TEXT,
-            polarity REAL
-        )
-    """)
-    c.execute(
-        "INSERT INTO sentiment_log (timestamp, user_input, sentiment, polarity) VALUES (?, ?, ?, ?)",
-        (datetime.datetime.utcnow().isoformat(), user_input, sentiment, polarity)
-    )
-    conn.commit()
-    conn.close()
+    cursor = conn.cursor()
+    try:
+        cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='execution_log';")
+        if not cursor.fetchone():
+            print("No 'execution_log' table found in the database.")
+            return
+
+        cursor.execute("PRAGMA table_info(execution_log);")
+        columns = [col[1] for col in cursor.fetchall()]
+        cursor.execute("SELECT * FROM execution_log;")
+        rows = cursor.fetchall()
+
+        if not rows:
+            print("No execution log entries found.")
+            return
+
+        with open(csv_path, "w", encoding="utf-8") as f:
+            f.write(",".join(columns) + "\n")
+            for row in rows:
+                # Escape commas and quotes in fields
+                formatted = []
+                for value in row:
+                    if value is None:
+                        formatted.append("")
+                    else:
+                        s = str(value)
+                        if "," in s or '"' in s:
+                            s = '"' + s.replace('"', '""') + '"'
+                        formatted.append(s)
+                f.write(",".join(formatted) + "\n")
+        print(f"Exported {len(rows)} entries to '{csv_path}'.")
+    finally:
+        conn.close()
 
 def new_feature():
-    '''Adds a Flask API endpoint for logging sentiment analysis results'''
-    app = Flask(__name__)
-    LOG_PATH = Path(os.getenv("TARGET_REPO_PATH", os.getcwd())) / "new_feature.log"
-    logger = setup_logger("new_feature", str(LOG_PATH), level=os.getenv("API_LOG_LEVEL", "INFO"))
-
-    @app.route("/api/log-sentiment", methods=["POST"])
-    def log_sentiment():
-        data = request.get_json()
-        user_input = data.get("user_input")
-        sentiment = data.get("sentiment")
-        polarity = data.get("polarity")
-        if not all([user_input, sentiment, polarity is not None]):
-            logger.warning("Missing required fields in request")
-            return jsonify({"error": "Missing required fields"}), 400
-        try:
-            log_sentiment_analysis(user_input, sentiment, float(polarity))
-            logger.info(f"Logged sentiment for input: {user_input[:30]}...")
-            return jsonify({"status": "success"}), 200
-        except Exception as e:
-            logger.error(f"Failed to log sentiment: {e}")
-            return jsonify({"error": "Failed to log sentiment"}), 500
-
-    app.run(host="0.0.0.0", port=5050)
+    '''Exports the execution log from the autonomous agent to a CSV file for analysis.'''
+    export_execution_log_to_csv()
 
 if __name__ == "__main__":
     new_feature()
