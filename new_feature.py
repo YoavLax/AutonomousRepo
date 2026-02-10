@@ -5,48 +5,64 @@ from logging_utils import setup_logger
 import sqlite3
 import datetime
 
-def log_user_feedback(db_path: str, feedback: str, timestamp: str) -> None:
+def get_recent_executions(limit: int = 10):
+    """Fetch recent execution logs from the autonomous agent's database."""
+    db_path = "execution_log.db"
+    if not os.path.exists(db_path):
+        return []
     conn = sqlite3.connect(db_path)
+    cursor = conn.cursor()
     try:
-        c = conn.cursor()
-        c.execute('''
-            CREATE TABLE IF NOT EXISTS user_feedback (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                feedback TEXT NOT NULL,
-                timestamp TEXT NOT NULL
-            )
-        ''')
-        c.execute('INSERT INTO user_feedback (feedback, timestamp) VALUES (?, ?)', (feedback, timestamp))
-        conn.commit()
+        cursor.execute(
+            "SELECT id, timestamp, action, status, details FROM execution_log ORDER BY timestamp DESC LIMIT ?",
+            (limit,),
+        )
+        rows = cursor.fetchall()
+        return [
+            {
+                "id": row[0],
+                "timestamp": row[1],
+                "action": row[2],
+                "status": row[3],
+                "details": row[4],
+            }
+            for row in rows
+        ]
     finally:
         conn.close()
 
-def new_feature():
-    """
-    Flask API endpoint to collect user feedback and store it in a local SQLite database.
-    """
+def create_log_viewer_app():
     app = Flask(__name__)
-    LOG_PATH = Path(os.getenv("TARGET_REPO_PATH", os.getcwd())) / "user_feedback.log"
-    logger = setup_logger("user_feedback_api", str(LOG_PATH), level=os.getenv("API_LOG_LEVEL", "INFO"))
-    DB_PATH = str(Path(os.getenv("TARGET_REPO_PATH", os.getcwd())) / "user_feedback.db")
+    LOG_PATH = Path(os.getenv("TARGET_REPO_PATH", os.getcwd())) / "new_feature.log"
+    logger = setup_logger("log_viewer", str(LOG_PATH), level=os.getenv("API_LOG_LEVEL", "INFO"))
 
-    @app.route("/api/submit-feedback", methods=["POST"])
-    def submit_feedback():
-        data = request.get_json()
-        feedback = data.get("feedback", "").strip()
-        if not feedback:
-            logger.warning("No feedback provided in request.")
-            return jsonify({"error": "Feedback is required."}), 400
-        timestamp = datetime.datetime.utcnow().isoformat()
+    @app.route("/api/recent-executions", methods=["GET"])
+    def recent_executions():
+        """API endpoint to fetch recent execution logs."""
         try:
-            log_user_feedback(DB_PATH, feedback, timestamp)
-            logger.info(f"Feedback received at {timestamp}: {feedback}")
-            return jsonify({"message": "Feedback submitted successfully."}), 200
+            limit = int(request.args.get("limit", 10))
+            logs = get_recent_executions(limit)
+            return jsonify({"success": True, "logs": logs})
         except Exception as e:
-            logger.error(f"Error saving feedback: {e}")
-            return jsonify({"error": "Failed to save feedback."}), 500
+            logger.error(f"Failed to fetch recent executions: {e}")
+            return jsonify({"success": False, "error": str(e)}), 500
 
-    app.run(host="0.0.0.0", port=5050)
+    @app.route("/dashboard/logs", methods=["GET"])
+    def dashboard_logs():
+        """Simple HTML dashboard to view recent execution logs."""
+        logs = get_recent_executions(20)
+        html = "<h2>Recent Execution Logs</h2><table border='1'><tr><th>ID</th><th>Timestamp</th><th>Action</th><th>Status</th><th>Details</th></tr>"
+        for log in logs:
+            html += f"<tr><td>{log['id']}</td><td>{log['timestamp']}</td><td>{log['action']}</td><td>{log['status']}</td><td>{log['details']}</td></tr>"
+        html += "</table>"
+        return html
+
+    return app
+
+def new_feature():
+    '''Run a Flask server providing an API and dashboard for recent execution logs.'''
+    app = create_log_viewer_app()
+    app.run(host="0.0.0.0", port=5050, debug=False)
 
 if __name__ == "__main__":
     new_feature()
