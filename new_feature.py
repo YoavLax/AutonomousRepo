@@ -2,67 +2,54 @@ import os
 from flask import Flask, request, jsonify
 from pathlib import Path
 from logging_utils import setup_logger
-import sqlite3
-import datetime
+from textblob import TextBlob
 
-def get_recent_executions(limit: int = 10):
-    """Fetch recent execution logs from the autonomous agent's database."""
-    db_path = "execution_log.db"
-    if not os.path.exists(db_path):
-        return []
-    conn = sqlite3.connect(db_path)
-    cursor = conn.cursor()
-    try:
-        cursor.execute(
-            "SELECT id, timestamp, action, status, details FROM execution_log ORDER BY timestamp DESC LIMIT ?",
-            (limit,),
-        )
-        rows = cursor.fetchall()
-        return [
-            {
-                "id": row[0],
-                "timestamp": row[1],
-                "action": row[2],
-                "status": row[3],
-                "details": row[4],
-            }
-            for row in rows
-        ]
-    finally:
-        conn.close()
+def analyze_sentiment_batch(texts):
+    """
+    Analyze sentiment for a batch of texts.
+    Returns a list of dicts with polarity and subjectivity for each text.
+    """
+    results = []
+    for text in texts:
+        blob = TextBlob(text)
+        results.append({
+            "text": text,
+            "polarity": blob.sentiment.polarity,
+            "subjectivity": blob.sentiment.subjectivity
+        })
+    return results
 
-def create_log_viewer_app():
+def create_sentiment_batch_api():
+    """
+    Create a Flask app with a /api/sentiment-batch endpoint for batch sentiment analysis.
+    """
     app = Flask(__name__)
-    LOG_PATH = Path(os.getenv("TARGET_REPO_PATH", os.getcwd())) / "new_feature.log"
-    logger = setup_logger("log_viewer", str(LOG_PATH), level=os.getenv("API_LOG_LEVEL", "INFO"))
+    LOG_PATH = Path(os.getenv("TARGET_REPO_PATH", os.getcwd())) / "sentiment_batch_api.log"
+    logger = setup_logger("sentiment_batch_api", str(LOG_PATH), level=os.getenv("API_LOG_LEVEL", "INFO"))
 
-    @app.route("/api/recent-executions", methods=["GET"])
-    def recent_executions():
-        """API endpoint to fetch recent execution logs."""
+    @app.route("/api/sentiment-batch", methods=["POST"])
+    def sentiment_batch():
         try:
-            limit = int(request.args.get("limit", 10))
-            logs = get_recent_executions(limit)
-            return jsonify({"success": True, "logs": logs})
+            data = request.get_json(force=True)
+            texts = data.get("texts")
+            if not isinstance(texts, list) or not all(isinstance(t, str) for t in texts):
+                logger.warning("Invalid input for sentiment batch: %s", data)
+                return jsonify({"error": "Input must be a JSON object with a 'texts' list of strings."}), 400
+            logger.info("Processing batch sentiment for %d texts", len(texts))
+            results = analyze_sentiment_batch(texts)
+            return jsonify({"results": results}), 200
         except Exception as e:
-            logger.error(f"Failed to fetch recent executions: {e}")
-            return jsonify({"success": False, "error": str(e)}), 500
-
-    @app.route("/dashboard/logs", methods=["GET"])
-    def dashboard_logs():
-        """Simple HTML dashboard to view recent execution logs."""
-        logs = get_recent_executions(20)
-        html = "<h2>Recent Execution Logs</h2><table border='1'><tr><th>ID</th><th>Timestamp</th><th>Action</th><th>Status</th><th>Details</th></tr>"
-        for log in logs:
-            html += f"<tr><td>{log['id']}</td><td>{log['timestamp']}</td><td>{log['action']}</td><td>{log['status']}</td><td>{log['details']}</td></tr>"
-        html += "</table>"
-        return html
+            logger.error("Error in sentiment_batch: %s", str(e))
+            return jsonify({"error": "Internal server error"}), 500
 
     return app
 
 def new_feature():
-    '''Run a Flask server providing an API and dashboard for recent execution logs.'''
-    app = create_log_viewer_app()
-    app.run(host="0.0.0.0", port=5050, debug=False)
+    """
+    Run the batch sentiment analysis API server.
+    """
+    app = create_sentiment_batch_api()
+    app.run(host="0.0.0.0", port=int(os.getenv("SENTIMENT_BATCH_PORT", 5050)))
 
 if __name__ == "__main__":
     new_feature()
