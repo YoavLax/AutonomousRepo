@@ -2,68 +2,51 @@ import os
 from flask import Flask, request, jsonify
 from pathlib import Path
 from logging_utils import setup_logger
-from textblob import TextBlob
 import sqlite3
 import datetime
 
-def analyze_sentiment_and_log():
-    """
-    Flask API endpoint to analyze sentiment of user-submitted text,
-    log the request and result to a SQLite database, and return the sentiment.
-    """
-    app = Flask(__name__)
-    LOG_PATH = Path(os.getenv("TARGET_REPO_PATH", os.getcwd())) / "sentiment_feature.log"
-    logger = setup_logger("sentiment_feature", str(LOG_PATH), level=os.getenv("API_LOG_LEVEL", "INFO"))
-    DB_PATH = Path(os.getenv("TARGET_REPO_PATH", os.getcwd())) / "sentiment_requests.db"
-
-    def init_db():
-        conn = sqlite3.connect(DB_PATH)
+def log_user_feedback(db_path: str, feedback: str, timestamp: str) -> None:
+    conn = sqlite3.connect(db_path)
+    try:
         c = conn.cursor()
-        c.execute("""
-            CREATE TABLE IF NOT EXISTS sentiment_requests (
+        c.execute('''
+            CREATE TABLE IF NOT EXISTS user_feedback (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
-                text TEXT NOT NULL,
-                polarity REAL,
-                subjectivity REAL,
+                feedback TEXT NOT NULL,
                 timestamp TEXT NOT NULL
             )
-        """)
+        ''')
+        c.execute('INSERT INTO user_feedback (feedback, timestamp) VALUES (?, ?)', (feedback, timestamp))
         conn.commit()
+    finally:
         conn.close()
 
-    @app.route("/api/analyze-sentiment", methods=["POST"])
-    def analyze_sentiment():
-        data = request.get_json()
-        if not data or "text" not in data:
-            logger.warning("No text provided in request")
-            return jsonify({"error": "No text provided"}), 400
-        text = data["text"]
-        try:
-            blob = TextBlob(text)
-            polarity = blob.sentiment.polarity
-            subjectivity = blob.sentiment.subjectivity
-            timestamp = datetime.datetime.utcnow().isoformat()
-            conn = sqlite3.connect(DB_PATH)
-            c = conn.cursor()
-            c.execute(
-                "INSERT INTO sentiment_requests (text, polarity, subjectivity, timestamp) VALUES (?, ?, ?, ?)",
-                (text, polarity, subjectivity, timestamp)
-            )
-            conn.commit()
-            conn.close()
-            logger.info(f"Sentiment analyzed for text: {text[:30]}... Polarity: {polarity}, Subjectivity: {subjectivity}")
-            return jsonify({
-                "text": text,
-                "polarity": polarity,
-                "subjectivity": subjectivity,
-                "timestamp": timestamp
-            })
-        except Exception as e:
-            logger.error(f"Error analyzing sentiment: {e}")
-            return jsonify({"error": "Failed to analyze sentiment"}), 500
+def new_feature():
+    """
+    Flask API endpoint to collect user feedback and store it in a local SQLite database.
+    """
+    app = Flask(__name__)
+    LOG_PATH = Path(os.getenv("TARGET_REPO_PATH", os.getcwd())) / "user_feedback.log"
+    logger = setup_logger("user_feedback_api", str(LOG_PATH), level=os.getenv("API_LOG_LEVEL", "INFO"))
+    DB_PATH = str(Path(os.getenv("TARGET_REPO_PATH", os.getcwd())) / "user_feedback.db")
 
-    init_db()
+    @app.route("/api/submit-feedback", methods=["POST"])
+    def submit_feedback():
+        data = request.get_json()
+        feedback = data.get("feedback", "").strip()
+        if not feedback:
+            logger.warning("No feedback provided in request.")
+            return jsonify({"error": "Feedback is required."}), 400
+        timestamp = datetime.datetime.utcnow().isoformat()
+        try:
+            log_user_feedback(DB_PATH, feedback, timestamp)
+            logger.info(f"Feedback received at {timestamp}: {feedback}")
+            return jsonify({"message": "Feedback submitted successfully."}), 200
+        except Exception as e:
+            logger.error(f"Error saving feedback: {e}")
+            return jsonify({"error": "Failed to save feedback."}), 500
+
     app.run(host="0.0.0.0", port=5050)
 
 if __name__ == "__main__":
-    analyze_sentiment_and_log()
+    new_feature()
