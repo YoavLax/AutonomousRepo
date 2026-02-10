@@ -2,55 +2,49 @@ import os
 from flask import Flask, request, jsonify
 from pathlib import Path
 from logging_utils import setup_logger
-import sqlite3
-import datetime
+from textblob import TextBlob
 
-def log_sentiment_analysis(user_input: str, sentiment: str, polarity: float, db_path: str = "execution_log.db"):
-    """Log sentiment analysis results to the execution log database."""
-    conn = sqlite3.connect(db_path)
-    try:
-        c = conn.cursor()
-        c.execute("""
-            CREATE TABLE IF NOT EXISTS sentiment_log (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                timestamp TEXT,
-                user_input TEXT,
-                sentiment TEXT,
-                polarity REAL
-            )
-        """)
-        c.execute("""
-            INSERT INTO sentiment_log (timestamp, user_input, sentiment, polarity)
-            VALUES (?, ?, ?, ?)
-        """, (datetime.datetime.utcnow().isoformat(), user_input, sentiment, polarity))
-        conn.commit()
-    finally:
-        conn.close()
+def analyze_sentiment_batch(texts):
+    """
+    Analyze sentiment for a batch of texts.
+    Returns a list of dicts with polarity and subjectivity for each text.
+    """
+    results = []
+    for text in texts:
+        blob = TextBlob(text)
+        sentiment = blob.sentiment
+        results.append({
+            "text": text,
+            "polarity": sentiment.polarity,
+            "subjectivity": sentiment.subjectivity
+        })
+    return results
+
+def create_app():
+    app = Flask(__name__)
+    LOG_PATH = Path(os.getenv("TARGET_REPO_PATH", os.getcwd())) / "batch_sentiment.log"
+    logger = setup_logger("batch_sentiment_api", str(LOG_PATH), level=os.getenv("API_LOG_LEVEL", "INFO"))
+
+    @app.route("/api/batch-sentiment", methods=["POST"])
+    def batch_sentiment():
+        """
+        Accepts a JSON payload with a list of texts and returns their sentiment analysis.
+        Example input: { "texts": ["I love this!", "This is bad."] }
+        """
+        data = request.get_json()
+        if not data or "texts" not in data or not isinstance(data["texts"], list):
+            logger.warning("Invalid input for batch sentiment analysis")
+            return jsonify({"error": "Invalid input. Provide a JSON with a 'texts' list."}), 400
+        results = analyze_sentiment_batch(data["texts"])
+        logger.info(f"Processed batch sentiment for {len(data['texts'])} texts")
+        return jsonify({"results": results})
+
+    return app
 
 def new_feature():
-    '''Adds a Flask API endpoint to log sentiment analysis results'''
-    app = Flask(__name__)
-    LOG_PATH = Path(os.getenv("TARGET_REPO_PATH", os.getcwd())) / "new_feature.log"
-    logger = setup_logger("new_feature", str(LOG_PATH), level=os.getenv("API_LOG_LEVEL", "INFO"))
-
-    @app.route("/api/log-sentiment", methods=["POST"])
-    def log_sentiment():
-        data = request.get_json()
-        user_input = data.get("user_input")
-        sentiment = data.get("sentiment")
-        polarity = data.get("polarity")
-        if not all([user_input, sentiment, polarity is not None]):
-            logger.warning("Missing required fields in request")
-            return jsonify({"error": "Missing required fields"}), 400
-        try:
-            log_sentiment_analysis(user_input, sentiment, float(polarity))
-            logger.info(f"Logged sentiment: {sentiment} (polarity: {polarity}) for input: {user_input}")
-            return jsonify({"status": "success"}), 200
-        except Exception as e:
-            logger.error(f"Failed to log sentiment: {e}")
-            return jsonify({"error": "Failed to log sentiment"}), 500
-
-    app.run(host="0.0.0.0", port=5050)
+    '''Run a Flask server providing a batch sentiment analysis API endpoint'''
+    app = create_app()
+    app.run(host="0.0.0.0", port=5050, debug=False)
 
 if __name__ == "__main__":
     new_feature()
