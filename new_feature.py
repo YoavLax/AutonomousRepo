@@ -2,61 +2,42 @@ import os
 from flask import Flask, request, jsonify
 from pathlib import Path
 from logging_utils import setup_logger
-import sqlite3
-import datetime
+from textblob import TextBlob
 
-def get_recent_executions(limit: int = 10):
-    """Fetch recent execution logs from the autonomous agent's database."""
-    db_path = "execution_log.db"
-    if not os.path.exists(db_path):
-        return []
-    conn = sqlite3.connect(db_path)
-    cursor = conn.cursor()
-    try:
-        cursor.execute(
-            "SELECT id, timestamp, action, status, details FROM execution_log ORDER BY timestamp DESC LIMIT ?",
-            (limit,),
-        )
-        rows = cursor.fetchall()
-        return [
-            {
-                "id": row[0],
-                "timestamp": row[1],
-                "action": row[2],
-                "status": row[3],
-                "details": row[4],
-            }
-            for row in rows
-        ]
-    finally:
-        conn.close()
+app = Flask(__name__)
+LOG_PATH = Path(os.getenv("TARGET_REPO_PATH", os.getcwd())) / "new_feature.log"
+logger = setup_logger("new_feature", str(LOG_PATH), level=os.getenv("NEW_FEATURE_LOG_LEVEL", "INFO"))
 
-def create_log_viewer_api():
-    """Create a Flask app to serve recent execution logs via API."""
-    app = Flask(__name__)
-    LOG_PATH = Path(os.getenv("TARGET_REPO_PATH", os.getcwd())) / "autonomous_agent.log"
-    logger = setup_logger("log_viewer_api", str(LOG_PATH), level=os.getenv("API_LOG_LEVEL", "INFO"))
-
-    @app.route("/api/recent-executions", methods=["GET"])
-    def recent_executions():
+@app.route("/api/batch-sentiment", methods=["POST"])
+def batch_sentiment():
+    """
+    Accepts a JSON array of texts and returns sentiment analysis for each.
+    Example input: {"texts": ["I love this!", "This is terrible."]}
+    """
+    data = request.get_json()
+    texts = data.get("texts", [])
+    results = []
+    for text in texts:
         try:
-            limit = int(request.args.get("limit", 10))
-            logs = get_recent_executions(limit)
-            return jsonify({"success": True, "logs": logs})
+            blob = TextBlob(text)
+            sentiment = blob.sentiment
+            results.append({
+                "text": text,
+                "polarity": sentiment.polarity,
+                "subjectivity": sentiment.subjectivity
+            })
         except Exception as e:
-            logger.error(f"Failed to fetch recent executions: {e}")
-            return jsonify({"success": False, "error": str(e)}), 500
-
-    return app
+            logger.error(f"Sentiment analysis failed for '{text}': {e}")
+            results.append({
+                "text": text,
+                "error": str(e)
+            })
+    logger.info(f"Batch sentiment analysis completed for {len(texts)} texts.")
+    return jsonify({"results": results})
 
 def new_feature():
-    """
-    Run a Flask API server that exposes recent execution logs from the autonomous agent.
-    Endpoint: /api/recent-executions?limit=10
-    """
-    app = create_log_viewer_api()
-    port = int(os.getenv("LOG_VIEWER_PORT", 5050))
-    app.run(host="0.0.0.0", port=port)
+    '''Starts a Flask server with a batch sentiment analysis endpoint'''
+    app.run(host="0.0.0.0", port=5001)
 
 if __name__ == "__main__":
     new_feature()
