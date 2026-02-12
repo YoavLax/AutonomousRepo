@@ -2,102 +2,42 @@ import os
 from flask import Flask, request, jsonify
 from pathlib import Path
 from logging_utils import setup_logger
-import sqlite3
-from typing import Any, Dict, List
+from textblob import TextBlob
 
-def get_recent_executions(limit: int = 10) -> List[Dict[str, Any]]:
-    """Fetch recent execution logs from the autonomous agent's SQLite DB."""
-    db_path = "execution_log.db"
-    if not os.path.exists(db_path):
-        return []
-    conn = sqlite3.connect(db_path)
-    cursor = conn.cursor()
-    try:
-        cursor.execute(
-            "SELECT id, timestamp, action, status, details FROM execution_log ORDER BY timestamp DESC LIMIT ?",
-            (limit,),
-        )
-        rows = cursor.fetchall()
-        return [
-            {
-                "id": row[0],
-                "timestamp": row[1],
-                "action": row[2],
-                "status": row[3],
-                "details": row[4],
-            }
-            for row in rows
-        ]
-    finally:
-        conn.close()
+def analyze_sentiment(text: str) -> dict:
+    """Analyze sentiment of the given text using TextBlob."""
+    blob = TextBlob(text)
+    polarity = blob.sentiment.polarity
+    subjectivity = blob.sentiment.subjectivity
+    sentiment = "positive" if polarity > 0.1 else "negative" if polarity < -0.1 else "neutral"
+    return {
+        "sentiment": sentiment,
+        "polarity": polarity,
+        "subjectivity": subjectivity
+    }
 
-def create_dashboard_app():
+def run_sentiment_api():
+    """Run a Flask API server for sentiment analysis."""
     app = Flask(__name__)
-    LOG_PATH = Path(os.getenv("TARGET_REPO_PATH", os.getcwd())) / "dashboard_feature.log"
-    logger = setup_logger("dashboard_feature", str(LOG_PATH), level=os.getenv("API_LOG_LEVEL", "INFO"))
+    LOG_PATH = Path(os.getenv("TARGET_REPO_PATH", os.getcwd())) / "sentiment_api.log"
+    logger = setup_logger("sentiment_api", str(LOG_PATH), level=os.getenv("API_LOG_LEVEL", "INFO"))
 
-    @app.route("/api/recent-executions", methods=["GET"])
-    def recent_executions():
-        try:
-            limit = int(request.args.get("limit", 10))
-            logs = get_recent_executions(limit)
-            return jsonify({"success": True, "logs": logs})
-        except Exception as e:
-            logger.error(f"Error fetching recent executions: {e}")
-            return jsonify({"success": False, "error": str(e)}), 500
+    @app.route("/api/sentiment", methods=["POST"])
+    def sentiment():
+        data = request.get_json()
+        if not data or "text" not in data:
+            logger.warning("No text provided for sentiment analysis.")
+            return jsonify({"error": "Missing 'text' in request body"}), 400
+        text = data["text"]
+        result = analyze_sentiment(text)
+        logger.info(f"Sentiment analysis performed: {result}")
+        return jsonify(result)
 
-    @app.route("/dashboard", methods=["GET"])
-    def dashboard():
-        # Simple HTML dashboard for recent executions
-        logs = get_recent_executions(20)
-        html = """
-        <html>
-        <head>
-            <title>Autonomous Agent Execution Dashboard</title>
-            <style>
-                body { font-family: Arial, sans-serif; margin: 40px; }
-                h1 { color: #333; }
-                table { border-collapse: collapse; width: 100%; }
-                th, td { border: 1px solid #ccc; padding: 8px; text-align: left; }
-                th { background: #f4f4f4; }
-                tr:nth-child(even) { background: #fafafa; }
-            </style>
-        </head>
-        <body>
-            <h1>Recent Autonomous Agent Executions</h1>
-            <table>
-                <tr>
-                    <th>ID</th>
-                    <th>Timestamp</th>
-                    <th>Action</th>
-                    <th>Status</th>
-                    <th>Details</th>
-                </tr>
-        """
-        for log in logs:
-            html += f"""
-                <tr>
-                    <td>{log['id']}</td>
-                    <td>{log['timestamp']}</td>
-                    <td>{log['action']}</td>
-                    <td>{log['status']}</td>
-                    <td>{log['details']}</td>
-                </tr>
-            """
-        html += """
-            </table>
-        </body>
-        </html>
-        """
-        return html
-
-    return app
+    app.run(host="0.0.0.0", port=5050)
 
 def new_feature():
-    '''Run a Flask dashboard to view recent autonomous agent executions'''
-    app = create_dashboard_app()
-    port = int(os.getenv("DASHBOARD_PORT", 5050))
-    app.run(host="0.0.0.0", port=port, debug=False)
+    '''Launches a sentiment analysis API endpoint at /api/sentiment'''
+    run_sentiment_api()
 
 if __name__ == "__main__":
     new_feature()
