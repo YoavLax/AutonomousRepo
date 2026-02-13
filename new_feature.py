@@ -18,8 +18,8 @@ def batch_sentiment():
         data = request.get_json()
         texts = data.get("texts", [])
         if not isinstance(texts, list) or not texts:
-            logger.warning("Invalid or empty 'texts' payload received.")
-            return jsonify({"error": "Payload must contain a non-empty 'texts' list."}), 400
+            logger.warning("Invalid or empty 'texts' array received.")
+            return jsonify({"error": "Provide a non-empty 'texts' array."}), 400
 
         results = []
         for text in texts:
@@ -33,11 +33,11 @@ def batch_sentiment():
         logger.info(f"Batch sentiment analysis completed for {len(texts)} texts.")
         return jsonify({"results": results}), 200
     except Exception as e:
-        logger.error(f"Error in batch_sentiment: {str(e)}")
-        return jsonify({"error": "Internal server error"}), 500
+        logger.error(f"Error in batch_sentiment: {e}")
+        return jsonify({"error": str(e)}), 500
 
 def new_feature():
-    '''Adds a batch sentiment analysis API endpoint to the Flask app'''
+    '''Starts a Flask server with a batch sentiment analysis endpoint'''
     app.run(host="0.0.0.0", port=5050)
 
 if __name__ == "__main__":
