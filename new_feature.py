@@ -2,42 +2,58 @@ import os
 from flask import Flask, request, jsonify
 from pathlib import Path
 from logging_utils import setup_logger
-from textblob import TextBlob
+import sqlite3
+import datetime
 
-app = Flask(__name__)
-LOG_PATH = Path(os.getenv("TARGET_REPO_PATH", os.getcwd())) / "new_feature.log"
-logger = setup_logger("new_feature", str(LOG_PATH), level=os.getenv("NEW_FEATURE_LOG_LEVEL", "INFO"))
-
-@app.route("/api/batch-sentiment", methods=["POST"])
-def batch_sentiment():
-    """
-    Accepts a JSON array of texts and returns their sentiment polarity and subjectivity.
-    Example input: {"texts": ["I love this!", "This is terrible."]}
-    """
-    try:
-        data = request.get_json()
-        texts = data.get("texts", [])
-        if not isinstance(texts, list) or not texts:
-            logger.warning("Invalid or empty 'texts' array received.")
-            return jsonify({"error": "Provide a non-empty 'texts' array."}), 400
-
-        results = []
-        for text in texts:
-            blob = TextBlob(text)
-            sentiment = blob.sentiment
-            results.append({
-                "text": text,
-                "polarity": sentiment.polarity,
-                "subjectivity": sentiment.subjectivity
-            })
-        logger.info(f"Batch sentiment analysis completed for {len(texts)} texts.")
-        return jsonify({"results": results}), 200
-    except Exception as e:
-        logger.error(f"Error in batch_sentiment: {e}")
-        return jsonify({"error": str(e)}), 500
+def log_sentiment_analysis(text: str, polarity: float, subjectivity: float, db_path: str = "sentiment_log.db"):
+    """Log sentiment analysis results to a SQLite database."""
+    conn = sqlite3.connect(db_path)
+    c = conn.cursor()
+    c.execute("""
+        CREATE TABLE IF NOT EXISTS sentiment_log (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            text TEXT,
+            polarity REAL,
+            subjectivity REAL,
+            timestamp TEXT
+        )
+    """)
+    c.execute("""
+        INSERT INTO sentiment_log (text, polarity, subjectivity, timestamp)
+        VALUES (?, ?, ?, ?)
+    """, (text, polarity, subjectivity, datetime.datetime.utcnow().isoformat()))
+    conn.commit()
+    conn.close()
 
 def new_feature():
-    '''Starts a Flask server with a batch sentiment analysis endpoint'''
+    '''Adds a Flask API endpoint to analyze sentiment and log results'''
+    try:
+        from textblob import TextBlob
+    except ImportError:
+        raise ImportError("textblob is required. Install with 'pip install textblob'.")
+
+    app = Flask(__name__)
+    LOG_PATH = Path(os.getenv("TARGET_REPO_PATH", os.getcwd())) / "new_feature.log"
+    logger = setup_logger("new_feature", str(LOG_PATH), level=os.getenv("API_LOG_LEVEL", "INFO"))
+
+    @app.route("/api/analyze-sentiment", methods=["POST"])
+    def analyze_sentiment():
+        data = request.get_json()
+        if not data or "text" not in data:
+            logger.warning("No text provided for sentiment analysis.")
+            return jsonify({"error": "Missing 'text' in request body"}), 400
+        text = data["text"]
+        blob = TextBlob(text)
+        polarity = blob.sentiment.polarity
+        subjectivity = blob.sentiment.subjectivity
+        log_sentiment_analysis(text, polarity, subjectivity)
+        logger.info(f"Sentiment analyzed for text: {text[:30]}... Polarity: {polarity}, Subjectivity: {subjectivity}")
+        return jsonify({
+            "text": text,
+            "polarity": polarity,
+            "subjectivity": subjectivity
+        })
+
     app.run(host="0.0.0.0", port=5050)
 
 if __name__ == "__main__":
