@@ -5,54 +5,49 @@ from logging_utils import setup_logger
 import sqlite3
 import datetime
 
-def log_sentiment_analysis(text: str, polarity: float, subjectivity: float, db_path: str = "sentiment_log.db"):
-    """Log sentiment analysis results to a SQLite database."""
+def get_log_stats(db_path: str = "execution_log.db"):
+    """Return statistics about the execution log: total entries, last entry timestamp, and error count."""
+    if not os.path.exists(db_path):
+        return {
+            "total_entries": 0,
+            "last_entry": None,
+            "error_count": 0
+        }
     conn = sqlite3.connect(db_path)
-    c = conn.cursor()
-    c.execute("""
-        CREATE TABLE IF NOT EXISTS sentiment_log (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            text TEXT,
-            polarity REAL,
-            subjectivity REAL,
-            timestamp TEXT
-        )
-    """)
-    c.execute("""
-        INSERT INTO sentiment_log (text, polarity, subjectivity, timestamp)
-        VALUES (?, ?, ?, ?)
-    """, (text, polarity, subjectivity, datetime.datetime.utcnow().isoformat()))
-    conn.commit()
-    conn.close()
+    cursor = conn.cursor()
+    try:
+        cursor.execute("SELECT COUNT(*) FROM execution_log")
+        total_entries = cursor.fetchone()[0]
+        cursor.execute("SELECT timestamp FROM execution_log ORDER BY timestamp DESC LIMIT 1")
+        last_entry = cursor.fetchone()
+        last_entry = last_entry[0] if last_entry else None
+        cursor.execute("SELECT COUNT(*) FROM execution_log WHERE level='ERROR'")
+        error_count = cursor.fetchone()[0]
+    except sqlite3.OperationalError:
+        # Table does not exist
+        total_entries = 0
+        last_entry = None
+        error_count = 0
+    finally:
+        conn.close()
+    return {
+        "total_entries": total_entries,
+        "last_entry": last_entry,
+        "error_count": error_count
+    }
 
 def new_feature():
-    '''Adds a Flask API endpoint to analyze sentiment and log results'''
-    try:
-        from textblob import TextBlob
-    except ImportError:
-        raise ImportError("textblob is required. Install with 'pip install textblob'.")
-
+    '''Adds a Flask API endpoint to report execution log statistics'''
     app = Flask(__name__)
-    LOG_PATH = Path(os.getenv("TARGET_REPO_PATH", os.getcwd())) / "new_feature.log"
-    logger = setup_logger("new_feature", str(LOG_PATH), level=os.getenv("API_LOG_LEVEL", "INFO"))
+    LOG_PATH = Path(os.getenv("TARGET_REPO_PATH", os.getcwd())) / "autonomous_agent.log"
+    logger = setup_logger("log_stats_api", str(LOG_PATH), level=os.getenv("API_LOG_LEVEL", "INFO"))
 
-    @app.route("/api/analyze-sentiment", methods=["POST"])
-    def analyze_sentiment():
-        data = request.get_json()
-        if not data or "text" not in data:
-            logger.warning("No text provided for sentiment analysis.")
-            return jsonify({"error": "Missing 'text' in request body"}), 400
-        text = data["text"]
-        blob = TextBlob(text)
-        polarity = blob.sentiment.polarity
-        subjectivity = blob.sentiment.subjectivity
-        log_sentiment_analysis(text, polarity, subjectivity)
-        logger.info(f"Sentiment analyzed for text: {text[:30]}... Polarity: {polarity}, Subjectivity: {subjectivity}")
-        return jsonify({
-            "text": text,
-            "polarity": polarity,
-            "subjectivity": subjectivity
-        })
+    @app.route("/api/log-stats", methods=["GET"])
+    def log_stats():
+        db_path = os.getenv("EXEC_LOG_DB_PATH", "execution_log.db")
+        stats = get_log_stats(db_path)
+        logger.info(f"Log stats requested: {stats}")
+        return jsonify(stats)
 
     app.run(host="0.0.0.0", port=5050)
 
