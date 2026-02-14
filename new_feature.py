@@ -38,11 +38,11 @@ def analyze_sentiment_and_log():
             logger.warning("No text provided in request")
             return jsonify({"error": "No text provided"}), 400
         text = data["text"]
-        blob = TextBlob(text)
-        polarity = blob.sentiment.polarity
-        subjectivity = blob.sentiment.subjectivity
-        timestamp = datetime.datetime.utcnow().isoformat()
         try:
+            blob = TextBlob(text)
+            polarity = blob.sentiment.polarity
+            subjectivity = blob.sentiment.subjectivity
+            timestamp = datetime.datetime.utcnow().isoformat()
             conn = sqlite3.connect(DB_PATH)
             c = conn.cursor()
             c.execute(
@@ -51,16 +51,16 @@ def analyze_sentiment_and_log():
             )
             conn.commit()
             conn.close()
-            logger.info(f"Logged sentiment analysis for text: {text[:30]}...")
+            logger.info(f"Sentiment analyzed for text: {text[:30]}... Polarity: {polarity}, Subjectivity: {subjectivity}")
+            return jsonify({
+                "text": text,
+                "polarity": polarity,
+                "subjectivity": subjectivity,
+                "timestamp": timestamp
+            })
         except Exception as e:
-            logger.error(f"Failed to log sentiment: {e}")
-            return jsonify({"error": "Failed to log sentiment"}), 500
-        return jsonify({
-            "text": text,
-            "polarity": polarity,
-            "subjectivity": subjectivity,
-            "timestamp": timestamp
-        })
+            logger.error(f"Error analyzing sentiment: {e}")
+            return jsonify({"error": "Failed to analyze sentiment"}), 500
 
     init_db()
     app.run(host="0.0.0.0", port=5050)
