@@ -1,43 +1,66 @@
 import os
-from flask import Flask, request, jsonify
-from pathlib import Path
-from logging_utils import setup_logger
 import sqlite3
-import datetime
+from datetime import datetime
+from typing import List, Dict, Any, Optional
+from autonomous_agent import ExecutionLog
 
-def get_log_stats(db_path: str = "execution_log.db"):
-    """Return statistics about the execution log: total entries, last entry timestamp."""
+def summarize_execution_logs(db_path: str = "execution_log.db", limit: int = 10) -> List[Dict[str, Any]]:
+    """
+    Summarize the most recent execution logs from the autonomous agent.
+
+    Args:
+        db_path (str): Path to the SQLite database file.
+        limit (int): Number of recent logs to summarize.
+
+    Returns:
+        List[Dict[str, Any]]: List of log summaries.
+    """
     if not os.path.exists(db_path):
-        return {"total_entries": 0, "last_entry": None}
+        print(f"Database file '{db_path}' does not exist.")
+        return []
+
     conn = sqlite3.connect(db_path)
     cursor = conn.cursor()
     try:
-        cursor.execute("SELECT COUNT(*), MAX(timestamp) FROM execution_log")
-        total, last = cursor.fetchone()
-        return {"total_entries": total, "last_entry": last}
-    except Exception as e:
-        return {"error": str(e)}
+        cursor.execute("""
+            SELECT id, timestamp, action, status, details
+            FROM execution_logs
+            ORDER BY timestamp DESC
+            LIMIT ?
+        """, (limit,))
+        rows = cursor.fetchall()
+        summaries = []
+        for row in rows:
+            log_id, timestamp, action, status, details = row
+            summaries.append({
+                "id": log_id,
+                "timestamp": timestamp,
+                "action": action,
+                "status": status,
+                "details": details
+            })
+        return summaries
+    except sqlite3.Error as e:
+        print(f"Error reading logs: {e}")
+        return []
     finally:
         conn.close()
 
-def create_stats_api():
-    app = Flask(__name__)
-    LOG_PATH = Path(os.getenv("TARGET_REPO_PATH", os.getcwd())) / "autonomous_agent.log"
-    logger = setup_logger("stats_api", str(LOG_PATH), level=os.getenv("API_LOG_LEVEL", "INFO"))
-
-    @app.route("/api/log-stats", methods=["GET"])
-    def log_stats():
-        stats = get_log_stats()
-        logger.info(f"Log stats requested: {stats}")
-        return jsonify(stats)
-
-    return app
+def print_log_summaries(summaries: List[Dict[str, Any]]):
+    if not summaries:
+        print("No execution logs found.")
+        return
+    print(f"{'ID':<5} {'Timestamp':<20} {'Action':<30} {'Status':<10} Details")
+    print("-" * 80)
+    for log in summaries:
+        print(f"{log['id']:<5} {log['timestamp']:<20} {log['action']:<30} {log['status']:<10} {log['details']}")
 
 def new_feature():
-    """Run a Flask API server that exposes /api/log-stats for execution log statistics."""
-    app = create_stats_api()
-    port = int(os.getenv("LOG_STATS_PORT", 5050))
-    app.run(host="0.0.0.0", port=port)
+    '''Summarize and print the most recent execution logs from the autonomous agent'''
+    db_path = "execution_log.db"
+    limit = 10
+    summaries = summarize_execution_logs(db_path, limit)
+    print_log_summaries(summaries)
 
 if __name__ == "__main__":
     new_feature()
