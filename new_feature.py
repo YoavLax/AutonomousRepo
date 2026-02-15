@@ -1,46 +1,54 @@
 import os
+import sqlite3
 from flask import Flask, request, jsonify
-from pathlib import Path
+from typing import Optional, Dict, Any
+from datetime import datetime
 from logging_utils import setup_logger
-from textblob import TextBlob
 
-def analyze_sentiment_batch(texts):
-    """
-    Analyze sentiment for a batch of texts.
-    Returns a list of dicts with polarity and subjectivity for each text.
-    """
-    results = []
-    for text in texts:
-        blob = TextBlob(text)
-        results.append({
-            "text": text,
-            "polarity": blob.sentiment.polarity,
-            "subjectivity": blob.sentiment.subjectivity
-        })
-    return results
+def get_db_connection(db_path: str = "execution_log.db") -> sqlite3.Connection:
+    conn = sqlite3.connect(db_path)
+    conn.row_factory = sqlite3.Row
+    return conn
+
+def get_recent_executions(limit: int = 10) -> list:
+    conn = get_db_connection()
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT id, timestamp, action, status, details FROM execution_log ORDER BY timestamp DESC LIMIT ?",
+            (limit,)
+        )
+        rows = cur.fetchall()
+        return [dict(row) for row in rows]
+    finally:
+        conn.close()
+
+def create_app():
+    app = Flask(__name__)
+    LOG_PATH = os.path.join(os.getcwd(), "new_feature.log")
+    logger = setup_logger("new_feature", LOG_PATH, level=os.getenv("API_LOG_LEVEL", "INFO"))
+
+    @app.route("/api/recent-executions", methods=["GET"])
+    def recent_executions():
+        """
+        API endpoint to fetch recent execution log entries.
+        Query param: limit (optional, default 10)
+        """
+        try:
+            limit = int(request.args.get("limit", 10))
+            logger.info(f"Fetching {limit} recent executions")
+            entries = get_recent_executions(limit)
+            return jsonify({"success": True, "executions": entries})
+        except Exception as e:
+            logger.error(f"Error fetching recent executions: {e}")
+            return jsonify({"success": False, "error": str(e)}), 500
+
+    return app
 
 def new_feature():
-    '''Adds a Flask API endpoint for batch sentiment analysis'''
-    app = Flask(__name__)
-    LOG_PATH = Path(os.getenv("TARGET_REPO_PATH", os.getcwd())) / "batch_sentiment.log"
-    logger = setup_logger("batch_sentiment_api", str(LOG_PATH), level=os.getenv("API_LOG_LEVEL", "INFO"))
-
-    @app.route("/api/batch-sentiment", methods=["POST"])
-    def batch_sentiment():
-        try:
-            data = request.get_json(force=True)
-            texts = data.get("texts")
-            if not isinstance(texts, list) or not all(isinstance(t, str) for t in texts):
-                logger.warning("Invalid input for batch sentiment analysis")
-                return jsonify({"error": "Input must be a JSON object with a 'texts' list of strings."}), 400
-            logger.info(f"Processing batch sentiment for {len(texts)} texts")
-            results = analyze_sentiment_batch(texts)
-            return jsonify({"results": results}), 200
-        except Exception as e:
-            logger.error(f"Error in batch sentiment: {e}")
-            return jsonify({"error": str(e)}), 500
-
-    app.run(host="0.0.0.0", port=5050)
+    '''Run a Flask server exposing an endpoint to view recent execution logs'''
+    app = create_app()
+    app.run(host="0.0.0.0", port=5050, debug=False)
 
 if __name__ == "__main__":
     new_feature()
