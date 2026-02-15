@@ -9,7 +9,7 @@ import datetime
 def analyze_sentiment_and_log():
     """
     Flask API endpoint to analyze sentiment of user-submitted text,
-    log the request and result to a local SQLite database, and return the sentiment.
+    log the request and result to a SQLite database, and return the sentiment.
     """
     app = Flask(__name__)
     LOG_PATH = Path(os.getenv("TARGET_REPO_PATH", os.getcwd())) / "sentiment_feature.log"
@@ -32,7 +32,7 @@ def analyze_sentiment_and_log():
         conn.close()
 
     @app.route("/api/analyze-sentiment", methods=["POST"])
-    def analyze():
+    def analyze_sentiment():
         data = request.get_json()
         if not data or "text" not in data:
             logger.warning("No text provided in request")
