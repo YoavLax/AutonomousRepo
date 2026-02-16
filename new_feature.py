@@ -5,77 +5,53 @@ from logging_utils import setup_logger
 import sqlite3
 import datetime
 
-app = Flask(__name__)
-LOG_PATH = Path(os.getenv("TARGET_REPO_PATH", os.getcwd())) / "new_feature.log"
-logger = setup_logger("new_feature", str(LOG_PATH), level=os.getenv("API_LOG_LEVEL", "INFO"))
+def get_db_path():
+    # Use the same DB as ExecutionLog in autonomous_agent.py
+    return "execution_log.db"
 
-DB_PATH = Path(os.getenv("TARGET_REPO_PATH", os.getcwd())) / "feature_usage.db"
-
-def init_db():
-    conn = sqlite3.connect(DB_PATH)
+def fetch_recent_logs(limit: int = 10):
+    db_path = get_db_path()
+    if not os.path.exists(db_path):
+        return []
+    conn = sqlite3.connect(db_path)
     cursor = conn.cursor()
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS feature_usage (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            feature_name TEXT NOT NULL,
-            used_at TEXT NOT NULL,
-            user_ip TEXT
-        )
-    """)
-    conn.commit()
-    conn.close()
-
-@app.route("/api/feature-usage", methods=["POST"])
-def log_feature_usage():
-    """
-    Log usage of a feature with timestamp and user IP.
-    Expects JSON: { "feature_name": "string" }
-    """
-    data = request.get_json()
-    feature_name = data.get("feature_name")
-    user_ip = request.remote_addr
-    if not feature_name:
-        logger.warning("Feature name missing in request")
-        return jsonify({"error": "feature_name required"}), 400
     try:
-        conn = sqlite3.connect(DB_PATH)
-        cursor = conn.cursor()
         cursor.execute(
-            "INSERT INTO feature_usage (feature_name, used_at, user_ip) VALUES (?, ?, ?)",
-            (feature_name, datetime.datetime.utcnow().isoformat(), user_ip)
+            "SELECT timestamp, action, status, details FROM execution_log ORDER BY timestamp DESC LIMIT ?",
+            (limit,)
         )
-        conn.commit()
-        conn.close()
-        logger.info(f"Logged usage for feature: {feature_name} from IP: {user_ip}")
-        return jsonify({"status": "success"}), 200
-    except Exception as e:
-        logger.error(f"Error logging feature usage: {e}")
-        return jsonify({"error": "internal error"}), 500
-
-@app.route("/api/feature-usage", methods=["GET"])
-def get_feature_usage():
-    """
-    Retrieve usage logs for all features.
-    """
-    try:
-        conn = sqlite3.connect(DB_PATH)
-        cursor = conn.cursor()
-        cursor.execute("SELECT feature_name, used_at, user_ip FROM feature_usage ORDER BY used_at DESC")
         rows = cursor.fetchall()
-        conn.close()
-        usage = [
-            {"feature_name": row[0], "used_at": row[1], "user_ip": row[2]}
+        return [
+            {
+                "timestamp": row[0],
+                "action": row[1],
+                "status": row[2],
+                "details": row[3]
+            }
             for row in rows
         ]
-        logger.info("Retrieved feature usage logs")
-        return jsonify({"usage": usage}), 200
-    except Exception as e:
-        logger.error(f"Error retrieving feature usage: {e}")
-        return jsonify({"error": "internal error"}), 500
+    finally:
+        conn.close()
 
 def new_feature():
-    '''Complete working code that extends existing functionality'''
-    init_db()
+    """
+    Adds a Flask API endpoint to serve recent execution logs from the autonomous agent.
+    """
+    app = Flask(__name__)
+    LOG_PATH = Path(os.getenv("TARGET_REPO_PATH", os.getcwd())) / "new_feature.log"
+    logger = setup_logger("new_feature", str(LOG_PATH), level=os.getenv("API_LOG_LEVEL", "INFO"))
+
+    @app.route("/api/recent-logs", methods=["GET"])
+    def recent_logs():
+        try:
+            limit = int(request.args.get("limit", 10))
+            logs = fetch_recent_logs(limit)
+            logger.info(f"Fetched {len(logs)} recent logs")
+            return jsonify({"logs": logs}), 200
+        except Exception as e:
+            logger.error(f"Error fetching logs: {e}")
+            return jsonify({"error": str(e)}), 500
+
     app.run(host="0.0.0.0", port=5050)
 
 if __name__ == "__main__":
