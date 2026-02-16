@@ -5,67 +5,78 @@ from logging_utils import setup_logger
 import sqlite3
 import datetime
 
-def get_db_path():
-    # Use the same DB path as ExecutionLog in autonomous_agent.py
-    return "execution_log.db"
+app = Flask(__name__)
+LOG_PATH = Path(os.getenv("TARGET_REPO_PATH", os.getcwd())) / "new_feature.log"
+logger = setup_logger("new_feature", str(LOG_PATH), level=os.getenv("API_LOG_LEVEL", "INFO"))
 
-def fetch_recent_logs(limit: int = 10):
-    db_path = get_db_path()
-    if not os.path.exists(db_path):
-        return []
-    conn = sqlite3.connect(db_path)
+DB_PATH = Path(os.getenv("TARGET_REPO_PATH", os.getcwd())) / "feature_usage.db"
+
+def init_db():
+    conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
-    try:
-        cursor.execute(
-            "SELECT id, timestamp, action, status, details FROM execution_log ORDER BY timestamp DESC LIMIT ?",
-            (limit,)
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS feature_usage (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            feature_name TEXT NOT NULL,
+            used_at TEXT NOT NULL,
+            user_ip TEXT
         )
+    """)
+    conn.commit()
+    conn.close()
+
+@app.route("/api/feature-usage", methods=["POST"])
+def log_feature_usage():
+    """
+    Log usage of a feature with timestamp and user IP.
+    Expects JSON: { "feature_name": "string" }
+    """
+    data = request.get_json()
+    feature_name = data.get("feature_name")
+    user_ip = request.remote_addr
+    if not feature_name:
+        logger.warning("Feature name missing in request")
+        return jsonify({"error": "feature_name required"}), 400
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        cursor = conn.cursor()
+        cursor.execute(
+            "INSERT INTO feature_usage (feature_name, used_at, user_ip) VALUES (?, ?, ?)",
+            (feature_name, datetime.datetime.utcnow().isoformat(), user_ip)
+        )
+        conn.commit()
+        conn.close()
+        logger.info(f"Logged usage for feature: {feature_name} from IP: {user_ip}")
+        return jsonify({"status": "success"}), 200
+    except Exception as e:
+        logger.error(f"Error logging feature usage: {e}")
+        return jsonify({"error": "internal error"}), 500
+
+@app.route("/api/feature-usage", methods=["GET"])
+def get_feature_usage():
+    """
+    Retrieve usage logs for all features.
+    """
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        cursor = conn.cursor()
+        cursor.execute("SELECT feature_name, used_at, user_ip FROM feature_usage ORDER BY used_at DESC")
         rows = cursor.fetchall()
-        logs = [
-            {
-                "id": row[0],
-                "timestamp": row[1],
-                "action": row[2],
-                "status": row[3],
-                "details": row[4]
-            }
+        conn.close()
+        usage = [
+            {"feature_name": row[0], "used_at": row[1], "user_ip": row[2]}
             for row in rows
         ]
-        return logs
-    finally:
-        conn.close()
-
-def create_log_dashboard_app():
-    app = Flask(__name__)
-    LOG_PATH = Path(os.getenv("TARGET_REPO_PATH", os.getcwd())) / "log_dashboard.log"
-    logger = setup_logger("log_dashboard", str(LOG_PATH), level=os.getenv("API_LOG_LEVEL", "INFO"))
-
-    @app.route("/api/recent-logs", methods=["GET"])
-    def recent_logs():
-        try:
-            limit = int(request.args.get("limit", 10))
-            logs = fetch_recent_logs(limit)
-            return jsonify({"logs": logs})
-        except Exception as e:
-            logger.error(f"Error fetching logs: {e}")
-            return jsonify({"error": "Failed to fetch logs"}), 500
-
-    @app.route("/dashboard/logs", methods=["GET"])
-    def dashboard():
-        # Simple HTML dashboard for recent logs
-        logs = fetch_recent_logs(20)
-        html = "<h2>Recent Execution Logs</h2><table border='1'><tr><th>ID</th><th>Timestamp</th><th>Action</th><th>Status</th><th>Details</th></tr>"
-        for log in logs:
-            html += f"<tr><td>{log['id']}</td><td>{log['timestamp']}</td><td>{log['action']}</td><td>{log['status']}</td><td>{log['details']}</td></tr>"
-        html += "</table>"
-        return html
-
-    return app
+        logger.info("Retrieved feature usage logs")
+        return jsonify({"usage": usage}), 200
+    except Exception as e:
+        logger.error(f"Error retrieving feature usage: {e}")
+        return jsonify({"error": "internal error"}), 500
 
 def new_feature():
-    '''Run a Flask server providing a dashboard and API for recent execution logs'''
-    app = create_log_dashboard_app()
-    app.run(host="0.0.0.0", port=5050, debug=True)
+    '''Complete working code that extends existing functionality'''
+    init_db()
+    app.run(host="0.0.0.0", port=5050)
 
 if __name__ == "__main__":
     new_feature()
