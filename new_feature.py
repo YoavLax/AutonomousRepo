@@ -29,10 +29,10 @@ def new_feature():
     def batch_sentiment():
         try:
             data = request.get_json(force=True)
-            texts = data.get("texts", [])
+            texts = data.get("texts")
             if not isinstance(texts, list) or not all(isinstance(t, str) for t in texts):
                 logger.warning("Invalid input for batch sentiment analysis")
-                return jsonify({"error": "Input must be a JSON object with a 'texts' list of strings."}), 400
+                return jsonify({"error": "Invalid input. 'texts' must be a list of strings."}), 400
             logger.info(f"Processing batch sentiment for {len(texts)} texts")
             results = analyze_sentiment_batch(texts)
             return jsonify({"results": results}), 200
