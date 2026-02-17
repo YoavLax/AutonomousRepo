@@ -3,67 +3,42 @@ from flask import Flask, request, jsonify
 from pathlib import Path
 from logging_utils import setup_logger
 from textblob import TextBlob
-import sqlite3
-import datetime
 
-def analyze_sentiment_and_log():
+app = Flask(__name__)
+LOG_PATH = Path(os.getenv("TARGET_REPO_PATH", os.getcwd())) / "new_feature.log"
+logger = setup_logger("new_feature", str(LOG_PATH), level=os.getenv("API_LOG_LEVEL", "INFO"))
+
+@app.route("/api/batch-sentiment", methods=["POST"])
+def batch_sentiment():
     """
-    Flask API endpoint to analyze sentiment of user-submitted text,
-    log the request and result to the execution log database,
-    and return the sentiment analysis.
+    Accepts a JSON array of texts and returns sentiment analysis for each.
+    Example input: {"texts": ["I love this!", "This is terrible."]}
     """
-    app = Flask(__name__)
-    LOG_PATH = Path(os.getenv("TARGET_REPO_PATH", os.getcwd())) / "new_feature.log"
-    logger = setup_logger("new_feature", str(LOG_PATH), level=os.getenv("API_LOG_LEVEL", "INFO"))
-    DB_PATH = os.getenv("EXEC_LOG_DB_PATH", "execution_log.db")
-
-    def log_to_db(user_text: str, polarity: float, subjectivity: float, timestamp: str):
-        try:
-            conn = sqlite3.connect(DB_PATH)
-            c = conn.cursor()
-            c.execute("""
-                CREATE TABLE IF NOT EXISTS sentiment_log (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    user_text TEXT,
-                    polarity REAL,
-                    subjectivity REAL,
-                    timestamp TEXT
-                )
-            """)
-            c.execute("""
-                INSERT INTO sentiment_log (user_text, polarity, subjectivity, timestamp)
-                VALUES (?, ?, ?, ?)
-            """, (user_text, polarity, subjectivity, timestamp))
-            conn.commit()
-            conn.close()
-        except Exception as e:
-            logger.error(f"Failed to log to DB: {e}")
-
-    @app.route("/api/analyze-sentiment", methods=["POST"])
-    def analyze_sentiment():
+    try:
         data = request.get_json()
-        if not data or "text" not in data:
-            logger.warning("No text provided in request")
-            return jsonify({"error": "No text provided"}), 400
-        user_text = data["text"]
-        try:
-            blob = TextBlob(user_text)
-            polarity = blob.sentiment.polarity
-            subjectivity = blob.sentiment.subjectivity
-            timestamp = datetime.datetime.utcnow().isoformat()
-            log_to_db(user_text, polarity, subjectivity, timestamp)
-            logger.info(f"Sentiment analyzed for text: {user_text}")
-            return jsonify({
-                "text": user_text,
-                "polarity": polarity,
-                "subjectivity": subjectivity,
-                "timestamp": timestamp
-            })
-        except Exception as e:
-            logger.error(f"Sentiment analysis failed: {e}")
-            return jsonify({"error": "Sentiment analysis failed"}), 500
+        texts = data.get("texts", [])
+        if not isinstance(texts, list):
+            logger.error("Invalid input: texts must be a list")
+            return jsonify({"error": "Invalid input: texts must be a list"}), 400
 
-    app.run(host="0.0.0.0", port=5050)
+        results = []
+        for text in texts:
+            blob = TextBlob(text)
+            sentiment = blob.sentiment
+            results.append({
+                "text": text,
+                "polarity": sentiment.polarity,
+                "subjectivity": sentiment.subjectivity
+            })
+        logger.info(f"Batch sentiment analysis completed for {len(texts)} texts")
+        return jsonify({"results": results}), 200
+    except Exception as e:
+        logger.error(f"Error in batch_sentiment: {str(e)}")
+        return jsonify({"error": str(e)}), 500
+
+def new_feature():
+    '''Adds a batch sentiment analysis API endpoint to the Flask app'''
+    app.run(host="0.0.0.0", port=5001)
 
 if __name__ == "__main__":
-    analyze_sentiment_and_log()
+    new_feature()
