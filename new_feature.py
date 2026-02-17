@@ -2,54 +2,68 @@ import os
 from flask import Flask, request, jsonify
 from pathlib import Path
 from logging_utils import setup_logger
+from textblob import TextBlob
 import sqlite3
-from autonomous_agent import ExecutionLog
 import datetime
 
-def get_recent_executions(limit: int = 10):
-    """Fetch recent execution logs from the database."""
-    db_path = "execution_log.db"
-    if not os.path.exists(db_path):
-        return []
-    conn = sqlite3.connect(db_path)
-    cursor = conn.cursor()
-    try:
-        cursor.execute(
-            "SELECT id, timestamp, action, status, details FROM execution_log ORDER BY timestamp DESC LIMIT ?",
-            (limit,),
-        )
-        rows = cursor.fetchall()
-        return [
-            {
-                "id": row[0],
-                "timestamp": row[1],
-                "action": row[2],
-                "status": row[3],
-                "details": row[4],
-            }
-            for row in rows
-        ]
-    finally:
-        conn.close()
-
-def new_feature():
-    '''Adds an API endpoint to fetch recent execution logs from the autonomous agent'''
+def analyze_sentiment_and_log():
+    """
+    Flask API endpoint to analyze sentiment of user-submitted text,
+    log the request and result to the execution log database,
+    and return the sentiment analysis.
+    """
     app = Flask(__name__)
     LOG_PATH = Path(os.getenv("TARGET_REPO_PATH", os.getcwd())) / "new_feature.log"
     logger = setup_logger("new_feature", str(LOG_PATH), level=os.getenv("API_LOG_LEVEL", "INFO"))
+    DB_PATH = os.getenv("EXEC_LOG_DB_PATH", "execution_log.db")
 
-    @app.route("/api/recent-executions", methods=["GET"])
-    def recent_executions():
+    def log_to_db(user_text: str, polarity: float, subjectivity: float, timestamp: str):
         try:
-            limit = int(request.args.get("limit", 10))
-            logs = get_recent_executions(limit)
-            logger.info(f"Fetched {len(logs)} recent executions")
-            return jsonify({"success": True, "executions": logs})
+            conn = sqlite3.connect(DB_PATH)
+            c = conn.cursor()
+            c.execute("""
+                CREATE TABLE IF NOT EXISTS sentiment_log (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    user_text TEXT,
+                    polarity REAL,
+                    subjectivity REAL,
+                    timestamp TEXT
+                )
+            """)
+            c.execute("""
+                INSERT INTO sentiment_log (user_text, polarity, subjectivity, timestamp)
+                VALUES (?, ?, ?, ?)
+            """, (user_text, polarity, subjectivity, timestamp))
+            conn.commit()
+            conn.close()
         except Exception as e:
-            logger.error(f"Error fetching recent executions: {e}")
-            return jsonify({"success": False, "error": str(e)}), 500
+            logger.error(f"Failed to log to DB: {e}")
+
+    @app.route("/api/analyze-sentiment", methods=["POST"])
+    def analyze_sentiment():
+        data = request.get_json()
+        if not data or "text" not in data:
+            logger.warning("No text provided in request")
+            return jsonify({"error": "No text provided"}), 400
+        user_text = data["text"]
+        try:
+            blob = TextBlob(user_text)
+            polarity = blob.sentiment.polarity
+            subjectivity = blob.sentiment.subjectivity
+            timestamp = datetime.datetime.utcnow().isoformat()
+            log_to_db(user_text, polarity, subjectivity, timestamp)
+            logger.info(f"Sentiment analyzed for text: {user_text}")
+            return jsonify({
+                "text": user_text,
+                "polarity": polarity,
+                "subjectivity": subjectivity,
+                "timestamp": timestamp
+            })
+        except Exception as e:
+            logger.error(f"Sentiment analysis failed: {e}")
+            return jsonify({"error": "Sentiment analysis failed"}), 500
 
     app.run(host="0.0.0.0", port=5050)
 
 if __name__ == "__main__":
-    new_feature()
+    analyze_sentiment_and_log()
