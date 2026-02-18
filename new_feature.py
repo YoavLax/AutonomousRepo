@@ -2,53 +2,40 @@ import os
 from flask import Flask, request, jsonify
 from pathlib import Path
 from logging_utils import setup_logger
-import sqlite3
-import datetime
+from textblob import TextBlob
 
-def log_sentiment_analysis(text: str, polarity: float, subjectivity: float, db_path: str = "sentiment_log.db"):
-    """Log sentiment analysis results to a SQLite database."""
-    conn = sqlite3.connect(db_path)
-    c = conn.cursor()
-    c.execute("""
-        CREATE TABLE IF NOT EXISTS sentiment_log (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            text TEXT,
-            polarity REAL,
-            subjectivity REAL,
-            timestamp TEXT
-        )
-    """)
-    c.execute("""
-        INSERT INTO sentiment_log (text, polarity, subjectivity, timestamp)
-        VALUES (?, ?, ?, ?)
-    """, (text, polarity, subjectivity, datetime.datetime.utcnow().isoformat()))
-    conn.commit()
-    conn.close()
+def analyze_sentiment(text: str) -> dict:
+    """Analyze sentiment of the given text using TextBlob."""
+    blob = TextBlob(text)
+    sentiment = blob.sentiment
+    return {
+        "polarity": sentiment.polarity,
+        "subjectivity": sentiment.subjectivity,
+        "label": "positive" if sentiment.polarity > 0 else "negative" if sentiment.polarity < 0 else "neutral"
+    }
 
-def new_feature():
-    '''Adds a Flask API endpoint for logging sentiment analysis results'''
+def run_sentiment_api():
+    """Run a Flask API server for sentiment analysis."""
     app = Flask(__name__)
-    LOG_PATH = Path(os.getenv("TARGET_REPO_PATH", os.getcwd())) / "new_feature.log"
-    logger = setup_logger("new_feature", str(LOG_PATH), level=os.getenv("API_LOG_LEVEL", "INFO"))
+    LOG_PATH = Path(os.getenv("TARGET_REPO_PATH", os.getcwd())) / "sentiment_api.log"
+    logger = setup_logger("sentiment_api", str(LOG_PATH), level=os.getenv("API_LOG_LEVEL", "INFO"))
 
-    @app.route("/api/log-sentiment", methods=["POST"])
-    def log_sentiment():
+    @app.route("/api/sentiment", methods=["POST"])
+    def sentiment():
         data = request.get_json()
-        if not data or "text" not in data or "polarity" not in data or "subjectivity" not in data:
-            logger.warning("Invalid request data: %s", data)
-            return jsonify({"error": "Missing required fields: text, polarity, subjectivity"}), 400
-        try:
-            text = str(data["text"])
-            polarity = float(data["polarity"])
-            subjectivity = float(data["subjectivity"])
-            log_sentiment_analysis(text, polarity, subjectivity)
-            logger.info("Logged sentiment for text: %s", text)
-            return jsonify({"status": "success"}), 200
-        except Exception as e:
-            logger.error("Error logging sentiment: %s", str(e))
-            return jsonify({"error": str(e)}), 500
+        if not data or "text" not in data:
+            logger.warning("No text provided for sentiment analysis.")
+            return jsonify({"error": "Missing 'text' in request body"}), 400
+        text = data["text"]
+        result = analyze_sentiment(text)
+        logger.info(f"Sentiment analysis for text: {text[:50]}... Result: {result}")
+        return jsonify(result)
 
     app.run(host="0.0.0.0", port=5050)
+
+def new_feature():
+    '''Launches a sentiment analysis API endpoint at /api/sentiment'''
+    run_sentiment_api()
 
 if __name__ == "__main__":
     new_feature()
