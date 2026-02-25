@@ -5,17 +5,19 @@ from logging_utils import setup_logger
 from textblob import TextBlob
 
 def analyze_sentiment(text: str) -> dict:
-    """Analyze sentiment of the given text using TextBlob."""
+    """Analyze sentiment of the provided text using TextBlob."""
     blob = TextBlob(text)
-    sentiment = blob.sentiment
+    polarity = blob.sentiment.polarity
+    subjectivity = blob.sentiment.subjectivity
+    sentiment = "positive" if polarity > 0.1 else "negative" if polarity < -0.1 else "neutral"
     return {
-        "polarity": sentiment.polarity,
-        "subjectivity": sentiment.subjectivity,
-        "label": "positive" if sentiment.polarity > 0 else "negative" if sentiment.polarity < 0 else "neutral"
+        "sentiment": sentiment,
+        "polarity": polarity,
+        "subjectivity": subjectivity
     }
 
-def create_sentiment_api():
-    """Create a Flask API endpoint for sentiment analysis."""
+def run_sentiment_api():
+    """Run a Flask API server for sentiment analysis."""
     app = Flask(__name__)
     LOG_PATH = Path(os.getenv("TARGET_REPO_PATH", os.getcwd())) / "sentiment_api.log"
     logger = setup_logger("sentiment_api", str(LOG_PATH), level=os.getenv("API_LOG_LEVEL", "INFO"))
@@ -27,16 +29,16 @@ def create_sentiment_api():
             logger.warning("No text provided for sentiment analysis.")
             return jsonify({"error": "Missing 'text' in request body"}), 400
         text = data["text"]
+        logger.info(f"Analyzing sentiment for text: {text[:100]}")
         result = analyze_sentiment(text)
-        logger.info(f"Sentiment analysis performed for text: {text[:50]}... Result: {result}")
+        logger.info(f"Sentiment result: {result}")
         return jsonify(result)
 
-    return app
+    app.run(host="0.0.0.0", port=5050)
 
 def new_feature():
-    """Run the sentiment analysis API server."""
-    app = create_sentiment_api()
-    app.run(host="0.0.0.0", port=5050)
+    '''Launches a sentiment analysis API endpoint using Flask and TextBlob.'''
+    run_sentiment_api()
 
 if __name__ == "__main__":
     new_feature()
