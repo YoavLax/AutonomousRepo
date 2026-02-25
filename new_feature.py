@@ -4,40 +4,52 @@ from pathlib import Path
 from logging_utils import setup_logger
 from textblob import TextBlob
 
-def analyze_sentiment(text: str) -> dict:
-    """Analyze sentiment of the given text using TextBlob."""
-    blob = TextBlob(text)
-    sentiment = blob.sentiment
-    return {
-        "polarity": sentiment.polarity,
-        "subjectivity": sentiment.subjectivity,
-        "label": "positive" if sentiment.polarity > 0 else "negative" if sentiment.polarity < 0 else "neutral"
-    }
+app = Flask(__name__)
+LOG_PATH = Path(os.getenv("TARGET_REPO_PATH", os.getcwd())) / "new_feature.log"
+logger = setup_logger("new_feature", str(LOG_PATH), level=os.getenv("NEW_FEATURE_LOG_LEVEL", "INFO"))
 
-def create_sentiment_api():
-    """Create and run a Flask API for sentiment analysis."""
-    app = Flask(__name__)
-    LOG_PATH = Path(os.getenv("TARGET_REPO_PATH", os.getcwd())) / "sentiment_api.log"
-    logger = setup_logger("sentiment_api", str(LOG_PATH), level=os.getenv("API_LOG_LEVEL", "INFO"))
+@app.route("/api/sentiment-summary", methods=["POST"])
+def sentiment_summary():
+    """
+    Analyze sentiment of a list of texts and return summary statistics.
+    Expects JSON: { "texts": [ ... ] }
+    Returns: { "average_polarity": float, "average_subjectivity": float, "details": [ ... ] }
+    """
+    data = request.get_json()
+    texts = data.get("texts", [])
+    if not isinstance(texts, list) or not texts:
+        logger.error("Invalid or empty 'texts' payload")
+        return jsonify({"error": "Provide a non-empty list of texts"}), 400
 
-    @app.route("/api/sentiment", methods=["POST"])
-    def sentiment():
-        data = request.get_json()
-        if not data or "text" not in data:
-            logger.warning("No text provided for sentiment analysis.")
-            return jsonify({"error": "Missing 'text' in request body."}), 400
-        text = data["text"]
-        logger.info(f"Analyzing sentiment for text: {text[:100]}")
-        result = analyze_sentiment(text)
-        logger.info(f"Sentiment result: {result}")
-        return jsonify(result)
+    details = []
+    total_polarity = 0.0
+    total_subjectivity = 0.0
 
-    return app
+    for text in texts:
+        blob = TextBlob(text)
+        polarity = blob.sentiment.polarity
+        subjectivity = blob.sentiment.subjectivity
+        details.append({
+            "text": text,
+            "polarity": polarity,
+            "subjectivity": subjectivity
+        })
+        total_polarity += polarity
+        total_subjectivity += subjectivity
+
+    avg_polarity = total_polarity / len(texts)
+    avg_subjectivity = total_subjectivity / len(texts)
+
+    logger.info(f"Sentiment summary computed for {len(texts)} texts")
+    return jsonify({
+        "average_polarity": avg_polarity,
+        "average_subjectivity": avg_subjectivity,
+        "details": details
+    })
 
 def new_feature():
-    """Run the sentiment analysis API server."""
-    app = create_sentiment_api()
-    app.run(host="0.0.0.0", port=int(os.getenv("SENTIMENT_API_PORT", 5050)))
+    '''Starts a Flask server with a sentiment summary API endpoint'''
+    app.run(host="0.0.0.0", port=5001)
 
 if __name__ == "__main__":
     new_feature()
