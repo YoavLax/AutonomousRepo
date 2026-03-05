@@ -25,10 +25,10 @@ def create_sentiment_api():
         data = request.get_json()
         if not data or "text" not in data:
             logger.warning("No text provided for sentiment analysis.")
-            return jsonify({"error": "Missing 'text' in request body."}), 400
+            return jsonify({"error": "Missing 'text' in request body"}), 400
         text = data["text"]
         result = analyze_sentiment(text)
-        logger.info(f"Sentiment analysis performed. Text: {text[:50]}... Result: {result}")
+        logger.info(f"Sentiment analysis performed for text: {text[:50]}... Result: {result}")
         return jsonify(result)
 
     return app
