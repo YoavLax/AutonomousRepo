@@ -4,32 +4,39 @@ from pathlib import Path
 from logging_utils import setup_logger
 from textblob import TextBlob
 
-def analyze_sentiment():
+def analyze_sentiment(text: str) -> dict:
+    """Analyze sentiment of the provided text using TextBlob."""
+    blob = TextBlob(text)
+    sentiment = blob.sentiment
+    return {
+        "polarity": sentiment.polarity,
+        "subjectivity": sentiment.subjectivity,
+        "label": "positive" if sentiment.polarity > 0 else "negative" if sentiment.polarity < 0 else "neutral"
+    }
+
+def new_feature():
     """
-    New feature: Sentiment analysis endpoint for submitted text.
-    Extends the Flask API with /api/sentiment-analysis.
+    Adds a Flask API endpoint for sentiment analysis of user-provided text.
+    POST /api/sentiment-analysis
+    Body: { "text": "..." }
+    Response: { "polarity": float, "subjectivity": float, "label": str }
     """
     app = Flask(__name__)
     LOG_PATH = Path(os.getenv("TARGET_REPO_PATH", os.getcwd())) / "sentiment_analysis.log"
-    logger = setup_logger("sentiment_analysis", str(LOG_PATH), level=os.getenv("API_LOG_LEVEL", "INFO"))
+    logger = setup_logger("sentiment_api", str(LOG_PATH), level=os.getenv("API_LOG_LEVEL", "INFO"))
 
     @app.route("/api/sentiment-analysis", methods=["POST"])
     def sentiment_analysis():
         data = request.get_json()
-        text = data.get("text", "")
-        if not text:
+        if not data or "text" not in data:
             logger.warning("No text provided for sentiment analysis.")
-            return jsonify({"error": "No text provided"}), 400
-        analysis = TextBlob(text)
-        sentiment = {
-            "polarity": analysis.polarity,
-            "subjectivity": analysis.subjectivity,
-            "label": "positive" if analysis.polarity > 0 else "negative" if analysis.polarity < 0 else "neutral"
-        }
-        logger.info(f"Sentiment analysis for text: {text} | Result: {sentiment}")
-        return jsonify(sentiment), 200
+            return jsonify({"error": "Missing 'text' in request body."}), 400
+        text = data["text"]
+        result = analyze_sentiment(text)
+        logger.info(f"Sentiment analysis performed. Text: {text[:50]}... Result: {result}")
+        return jsonify(result)
 
-    app.run(host="0.0.0.0", port=5001)
+    app.run(host="0.0.0.0", port=5050)
 
 if __name__ == "__main__":
-    analyze_sentiment()
+    new_feature()
