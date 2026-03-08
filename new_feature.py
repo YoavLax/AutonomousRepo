@@ -4,39 +4,50 @@ from pathlib import Path
 from logging_utils import setup_logger
 from textblob import TextBlob
 
-def analyze_sentiment(text: str) -> dict:
-    """Analyze sentiment of the provided text using TextBlob."""
-    blob = TextBlob(text)
-    sentiment = blob.sentiment
-    return {
-        "polarity": sentiment.polarity,
-        "subjectivity": sentiment.subjectivity,
-        "label": "positive" if sentiment.polarity > 0 else "negative" if sentiment.polarity < 0 else "neutral"
+app = Flask(__name__)
+LOG_PATH = Path(os.getenv("TARGET_REPO_PATH", os.getcwd())) / "new_feature.log"
+logger = setup_logger("new_feature", str(LOG_PATH), level=os.getenv("API_LOG_LEVEL", "INFO"))
+
+@app.route("/api/sentiment-summary", methods=["POST"])
+def sentiment_summary():
+    """
+    Accepts a list of texts and returns a sentiment summary (average polarity, subjectivity, and distribution).
+    Example input: {"texts": ["I love this!", "This is bad.", "Neutral."]}
+    """
+    data = request.get_json()
+    texts = data.get("texts", [])
+    if not isinstance(texts, list) or not texts:
+        logger.error("Invalid or empty 'texts' provided.")
+        return jsonify({"error": "Provide a non-empty list of texts."}), 400
+
+    sentiments = []
+    for text in texts:
+        blob = TextBlob(text)
+        sentiments.append({
+            "text": text,
+            "polarity": blob.sentiment.polarity,
+            "subjectivity": blob.sentiment.subjectivity
+        })
+
+    avg_polarity = sum(s["polarity"] for s in sentiments) / len(sentiments)
+    avg_subjectivity = sum(s["subjectivity"] for s in sentiments) / len(sentiments)
+    distribution = {
+        "positive": sum(1 for s in sentiments if s["polarity"] > 0),
+        "negative": sum(1 for s in sentiments if s["polarity"] < 0),
+        "neutral": sum(1 for s in sentiments if s["polarity"] == 0)
     }
 
+    logger.info(f"Sentiment summary calculated for {len(texts)} texts.")
+    return jsonify({
+        "average_polarity": avg_polarity,
+        "average_subjectivity": avg_subjectivity,
+        "distribution": distribution,
+        "details": sentiments
+    })
+
 def new_feature():
-    """
-    Adds a Flask API endpoint for sentiment analysis of user-provided text.
-    POST /api/sentiment-analysis
-    Body: { "text": "..." }
-    Response: { "polarity": float, "subjectivity": float, "label": str }
-    """
-    app = Flask(__name__)
-    LOG_PATH = Path(os.getenv("TARGET_REPO_PATH", os.getcwd())) / "sentiment_analysis.log"
-    logger = setup_logger("sentiment_api", str(LOG_PATH), level=os.getenv("API_LOG_LEVEL", "INFO"))
-
-    @app.route("/api/sentiment-analysis", methods=["POST"])
-    def sentiment_analysis():
-        data = request.get_json()
-        if not data or "text" not in data:
-            logger.warning("No text provided for sentiment analysis.")
-            return jsonify({"error": "Missing 'text' in request body"}), 400
-        text = data["text"]
-        result = analyze_sentiment(text)
-        logger.info(f"Sentiment analysis performed. Text: {text[:50]}... Result: {result}")
-        return jsonify(result)
-
-    app.run(host="0.0.0.0", port=5050)
+    '''Starts the Flask app for the sentiment summary API'''
+    app.run(host="0.0.0.0", port=5001)
 
 if __name__ == "__main__":
     new_feature()
