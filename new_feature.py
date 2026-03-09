@@ -5,20 +5,17 @@ from logging_utils import setup_logger
 from textblob import TextBlob
 
 def analyze_sentiment(text: str) -> dict:
-    """
-    Analyze the sentiment of the provided text using TextBlob.
-    Returns a dictionary with polarity and subjectivity.
-    """
+    """Analyze sentiment of the provided text using TextBlob."""
     blob = TextBlob(text)
+    sentiment = blob.sentiment
     return {
-        "polarity": blob.sentiment.polarity,
-        "subjectivity": blob.sentiment.subjectivity
+        "polarity": sentiment.polarity,
+        "subjectivity": sentiment.subjectivity,
+        "label": "positive" if sentiment.polarity > 0 else "negative" if sentiment.polarity < 0 else "neutral"
     }
 
-def run_sentiment_api():
-    """
-    Launch a Flask API endpoint for sentiment analysis.
-    """
+def create_sentiment_api():
+    """Create a Flask app that exposes a sentiment analysis endpoint."""
     app = Flask(__name__)
     LOG_PATH = Path(os.getenv("TARGET_REPO_PATH", os.getcwd())) / "sentiment_api.log"
     logger = setup_logger("sentiment_api", str(LOG_PATH), level=os.getenv("API_LOG_LEVEL", "INFO"))
@@ -28,13 +25,19 @@ def run_sentiment_api():
         data = request.get_json()
         if not data or "text" not in data:
             logger.warning("No text provided for sentiment analysis.")
-            return jsonify({"error": "Missing 'text' in request body"}), 400
+            return jsonify({"error": "Missing 'text' in request body."}), 400
         text = data["text"]
+        logger.info(f"Analyzing sentiment for text: {text[:100]}")
         result = analyze_sentiment(text)
-        logger.info(f"Sentiment analysis performed for text: {text[:50]}...")
+        logger.info(f"Sentiment result: {result}")
         return jsonify(result)
 
-    app.run(host="0.0.0.0", port=5050)
+    return app
+
+def new_feature():
+    """Run the sentiment analysis API server."""
+    app = create_sentiment_api()
+    app.run(host="0.0.0.0", port=5050, debug=False)
 
 if __name__ == "__main__":
-    run_sentiment_api()
+    new_feature()
