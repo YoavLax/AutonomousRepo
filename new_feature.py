@@ -5,7 +5,7 @@ from logging_utils import setup_logger
 from textblob import TextBlob
 
 def analyze_sentiment(text: str) -> dict:
-    """Analyze sentiment of the provided text using TextBlob."""
+    """Analyze the sentiment of the provided text using TextBlob."""
     blob = TextBlob(text)
     sentiment = blob.sentiment
     return {
