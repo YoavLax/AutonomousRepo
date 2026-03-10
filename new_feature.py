@@ -28,7 +28,7 @@ def create_sentiment_api():
             return jsonify({"error": "Missing 'text' in request body"}), 400
         text = data["text"]
         result = analyze_sentiment(text)
-        logger.info(f"Sentiment analysis performed: {result}")
+        logger.info(f"Sentiment analysis performed for text: {text[:50]}... Result: {result}")
         return jsonify(result)
 
     return app
