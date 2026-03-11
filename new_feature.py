@@ -15,7 +15,7 @@ def analyze_sentiment(text: str) -> dict:
     }
 
 def create_sentiment_api():
-    """Create and run a Flask API for sentiment analysis."""
+    """Create a Flask API endpoint for sentiment analysis."""
     app = Flask(__name__)
     LOG_PATH = Path(os.getenv("TARGET_REPO_PATH", os.getcwd())) / "sentiment_api.log"
     logger = setup_logger("sentiment_api", str(LOG_PATH), level=os.getenv("API_LOG_LEVEL", "INFO"))
@@ -28,14 +28,15 @@ def create_sentiment_api():
             return jsonify({"error": "Missing 'text' in request body"}), 400
         text = data["text"]
         result = analyze_sentiment(text)
-        logger.info(f"Sentiment analysis for text: {text[:50]}... Result: {result}")
+        logger.info(f"Sentiment analysis performed for text: {text[:50]}... Result: {result}")
         return jsonify(result)
 
-    app.run(host="0.0.0.0", port=5050)
+    return app
 
 def new_feature():
-    '''Launches a Flask API endpoint for sentiment analysis of user-provided text.'''
-    create_sentiment_api()
+    """Run the sentiment analysis API server."""
+    app = create_sentiment_api()
+    app.run(host="0.0.0.0", port=5050, debug=False)
 
 if __name__ == "__main__":
     new_feature()
