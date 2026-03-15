@@ -32,7 +32,7 @@ def new_feature():
         data = request.get_json()
         if not data or "text" not in data:
             logger.warning("No text provided for sentiment analysis.")
-            return jsonify({"error": "Missing 'text' in request body"}), 400
+            return jsonify({"error": "Missing 'text' in request body."}), 400
         result = analyze_sentiment(data["text"])
         logger.info(f"Sentiment analysis result: {result}")
         return jsonify(result)
