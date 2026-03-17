@@ -3,27 +3,24 @@ from flask import Flask, request, jsonify
 from pathlib import Path
 from logging_utils import setup_logger
 from textblob import TextBlob
-import datetime
 
 def analyze_sentiment(text: str) -> dict:
-    """Analyze sentiment of the given text using TextBlob."""
+    """
+    Analyze the sentiment of the provided text using TextBlob.
+    Returns polarity and subjectivity.
+    """
     blob = TextBlob(text)
-    polarity = blob.sentiment.polarity
-    subjectivity = blob.sentiment.subjectivity
-    sentiment = "positive" if polarity > 0.1 else "negative" if polarity < -0.1 else "neutral"
     return {
-        "sentiment": sentiment,
-        "polarity": polarity,
-        "subjectivity": subjectivity
+        "polarity": blob.sentiment.polarity,
+        "subjectivity": blob.sentiment.subjectivity
     }
 
-def log_sentiment_analysis(text: str, result: dict, logger):
-    timestamp = datetime.datetime.utcnow().isoformat()
-    logger.info(f"[{timestamp}] Sentiment analysis for text: '{text}' | Result: {result}")
-
 def create_sentiment_api():
+    """
+    Create and run a Flask API for sentiment analysis.
+    """
     app = Flask(__name__)
-    LOG_PATH = Path(os.getenv("TARGET_REPO_PATH", os.getcwd())) / "sentiment_analysis.log"
+    LOG_PATH = Path(os.getenv("TARGET_REPO_PATH", os.getcwd())) / "sentiment_api.log"
     logger = setup_logger("sentiment_api", str(LOG_PATH), level=os.getenv("API_LOG_LEVEL", "INFO"))
 
     @app.route("/api/sentiment", methods=["POST"])
@@ -34,15 +31,14 @@ def create_sentiment_api():
             return jsonify({"error": "Missing 'text' in request body"}), 400
         text = data["text"]
         result = analyze_sentiment(text)
-        log_sentiment_analysis(text, result, logger)
+        logger.info(f"Sentiment analysis performed for text: {text[:30]}...")
         return jsonify(result)
 
-    return app
+    app.run(host="0.0.0.0", port=5050)
 
 def new_feature():
-    """Run a Flask API server that provides sentiment analysis for submitted text."""
-    app = create_sentiment_api()
-    app.run(host="0.0.0.0", port=5050)
+    '''Launches a Flask API endpoint for sentiment analysis'''
+    create_sentiment_api()
 
 if __name__ == "__main__":
     new_feature()
