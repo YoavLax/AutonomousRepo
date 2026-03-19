@@ -7,34 +7,43 @@ from textblob import TextBlob
 def analyze_sentiment(text: str) -> dict:
     """Analyze sentiment of the given text using TextBlob."""
     blob = TextBlob(text)
-    sentiment = blob.sentiment
+    polarity = blob.sentiment.polarity
+    subjectivity = blob.sentiment.subjectivity
+    sentiment = "positive" if polarity > 0.1 else "negative" if polarity < -0.1 else "neutral"
     return {
-        "polarity": sentiment.polarity,
-        "subjectivity": sentiment.subjectivity,
-        "label": "positive" if sentiment.polarity > 0 else "negative" if sentiment.polarity < 0 else "neutral"
+        "sentiment": sentiment,
+        "polarity": polarity,
+        "subjectivity": subjectivity
     }
 
 def new_feature():
     """
-    Adds a minimal Flask API endpoint for sentiment analysis.
-    POST /api/sentiment
-    Body: { "text": "..." }
-    Response: { "polarity": float, "subjectivity": float, "label": str }
+    Flask API endpoint for batch sentiment analysis.
+    POST /api/batch-sentiment
+    Body: { "texts": [ "text1", "text2", ... ] }
+    Response: { "results": [ { "sentiment": ..., "polarity": ..., "subjectivity": ... }, ... ] }
     """
     app = Flask(__name__)
-    LOG_PATH = Path(os.getenv("TARGET_REPO_PATH", os.getcwd())) / "new_feature.log"
-    logger = setup_logger("new_feature", str(LOG_PATH), level=os.getenv("API_LOG_LEVEL", "INFO"))
+    LOG_PATH = Path(os.getenv("TARGET_REPO_PATH", os.getcwd())) / "batch_sentiment.log"
+    logger = setup_logger("batch_sentiment_api", str(LOG_PATH), level=os.getenv("API_LOG_LEVEL", "INFO"))
 
-    @app.route("/api/sentiment", methods=["POST"])
-    def sentiment_api():
+    @app.route("/api/batch-sentiment", methods=["POST"])
+    def batch_sentiment():
         data = request.get_json(force=True)
-        text = data.get("text", "")
-        if not text:
-            logger.warning("No text provided for sentiment analysis.")
-            return jsonify({"error": "No text provided"}), 400
-        result = analyze_sentiment(text)
-        logger.info(f"Sentiment analysis for text: {text[:50]}... Result: {result}")
-        return jsonify(result)
+        texts = data.get("texts")
+        if not isinstance(texts, list) or not all(isinstance(t, str) for t in texts):
+            logger.error("Invalid input for batch sentiment analysis")
+            return jsonify({"error": "Input must be a JSON object with a 'texts' list of strings."}), 400
+        results = []
+        for text in texts:
+            try:
+                result = analyze_sentiment(text)
+                results.append(result)
+            except Exception as e:
+                logger.error(f"Error analyzing text: {e}")
+                results.append({"error": str(e)})
+        logger.info(f"Batch sentiment analysis completed for {len(texts)} texts.")
+        return jsonify({"results": results})
 
     app.run(host="0.0.0.0", port=5050)
 
