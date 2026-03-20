@@ -5,30 +5,28 @@ from logging_utils import setup_logger
 from textblob import TextBlob
 
 def analyze_sentiment(text: str) -> dict:
-    """Analyze sentiment of the given text using TextBlob."""
+    """Analyze sentiment of the provided text using TextBlob."""
     blob = TextBlob(text)
-    polarity = blob.sentiment.polarity
-    subjectivity = blob.sentiment.subjectivity
-    sentiment = "positive" if polarity > 0 else "negative" if polarity < 0 else "neutral"
+    sentiment = blob.sentiment
     return {
-        "sentiment": sentiment,
-        "polarity": polarity,
-        "subjectivity": subjectivity
+        "polarity": sentiment.polarity,
+        "subjectivity": sentiment.subjectivity,
+        "sentiment": "positive" if sentiment.polarity > 0 else "negative" if sentiment.polarity < 0 else "neutral"
     }
 
 def new_feature():
     """
-    Flask API endpoint for sentiment analysis.
-    POST /api/sentiment
+    Adds a Flask API endpoint for sentiment analysis.
+    POST /api/sentiment-analysis
     Body: { "text": "..." }
-    Response: { "sentiment": "...", "polarity": ..., "subjectivity": ... }
+    Response: { "polarity": float, "subjectivity": float, "sentiment": "positive|neutral|negative" }
     """
     app = Flask(__name__)
-    LOG_PATH = Path(os.getenv("TARGET_REPO_PATH", os.getcwd())) / "sentiment_api.log"
+    LOG_PATH = Path(os.getenv("TARGET_REPO_PATH", os.getcwd())) / "sentiment_analysis.log"
     logger = setup_logger("sentiment_api", str(LOG_PATH), level=os.getenv("API_LOG_LEVEL", "INFO"))
 
-    @app.route("/api/sentiment", methods=["POST"])
-    def sentiment_api():
+    @app.route("/api/sentiment-analysis", methods=["POST"])
+    def sentiment_analysis():
         data = request.get_json()
         if not data or "text" not in data:
             logger.warning("No text provided for sentiment analysis.")
