@@ -5,7 +5,7 @@ from logging_utils import setup_logger
 from textblob import TextBlob
 
 def analyze_sentiment(text: str) -> dict:
-    """Analyze sentiment of the provided text using TextBlob."""
+    """Analyze sentiment of the given text using TextBlob."""
     blob = TextBlob(text)
     polarity = blob.sentiment.polarity
     subjectivity = blob.sentiment.subjectivity
@@ -19,22 +19,23 @@ def analyze_sentiment(text: str) -> dict:
 def new_feature():
     """
     Flask API endpoint for sentiment analysis.
-    POST /api/sentiment
+    POST /api/sentiment-analysis
     Body: { "text": "..." }
     Response: { "sentiment": "...", "polarity": ..., "subjectivity": ... }
     """
     app = Flask(__name__)
-    LOG_PATH = Path(os.getenv("TARGET_REPO_PATH", os.getcwd())) / "sentiment_api.log"
-    logger = setup_logger("sentiment_api", str(LOG_PATH), level=os.getenv("API_LOG_LEVEL", "INFO"))
+    LOG_PATH = Path(os.getenv("TARGET_REPO_PATH", os.getcwd())) / "sentiment_analysis.log"
+    logger = setup_logger("sentiment_analysis_api", str(LOG_PATH), level=os.getenv("API_LOG_LEVEL", "INFO"))
 
-    @app.route("/api/sentiment", methods=["POST"])
-    def sentiment():
+    @app.route("/api/sentiment-analysis", methods=["POST"])
+    def sentiment_analysis():
         data = request.get_json()
         if not data or "text" not in data:
             logger.warning("No text provided for sentiment analysis.")
             return jsonify({"error": "Missing 'text' in request body"}), 400
-        result = analyze_sentiment(data["text"])
-        logger.info(f"Sentiment analysis result: {result}")
+        text = data["text"]
+        result = analyze_sentiment(text)
+        logger.info(f"Sentiment analysis for text: {text[:50]}... Result: {result}")
         return jsonify(result)
 
     app.run(host="0.0.0.0", port=5050)
