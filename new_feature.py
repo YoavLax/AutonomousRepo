@@ -25,7 +25,7 @@ def new_feature():
     """
     app = Flask(__name__)
     LOG_PATH = Path(os.getenv("TARGET_REPO_PATH", os.getcwd())) / "sentiment_analysis.log"
-    logger = setup_logger("sentiment_analysis_api", str(LOG_PATH), level=os.getenv("API_LOG_LEVEL", "INFO"))
+    logger = setup_logger("sentiment_api", str(LOG_PATH), level=os.getenv("API_LOG_LEVEL", "INFO"))
 
     @app.route("/api/sentiment-analysis", methods=["POST"])
     def sentiment_analysis():
@@ -35,10 +35,10 @@ def new_feature():
             return jsonify({"error": "Missing 'text' in request body"}), 400
         text = data["text"]
         result = analyze_sentiment(text)
-        logger.info(f"Sentiment analysis for text: {text[:50]}... Result: {result}")
-        return jsonify(result)
+        logger.info(f"Sentiment analysis performed: {result}")
+        return jsonify(result), 200
 
-    app.run(host="0.0.0.0", port=5050)
+    app.run(host="0.0.0.0", port=5001)
 
 if __name__ == "__main__":
     new_feature()
