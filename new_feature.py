@@ -35,15 +35,11 @@ def new_feature():
             return jsonify({"error": "Missing 'text' in request body"}), 400
         text = data["text"]
         logger.info(f"Analyzing sentiment for text: {text[:100]}...")
-        try:
-            result = analyze_sentiment(text)
-            logger.info(f"Sentiment result: {result}")
-            return jsonify(result)
-        except Exception as e:
-            logger.error(f"Sentiment analysis failed: {e}")
-            return jsonify({"error": "Sentiment analysis failed"}), 500
+        result = analyze_sentiment(text)
+        logger.info(f"Sentiment result: {result}")
+        return jsonify(result), 200
 
-    app.run(host="0.0.0.0", port=5001)
+    app.run(host="0.0.0.0", port=5050)
 
 if __name__ == "__main__":
     new_feature()
