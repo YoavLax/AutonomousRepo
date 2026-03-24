@@ -5,7 +5,7 @@ from logging_utils import setup_logger
 from textblob import TextBlob
 
 def analyze_sentiment(text: str) -> dict:
-    """Analyze sentiment of the given text using TextBlob."""
+    """Analyze sentiment of the provided text using TextBlob."""
     blob = TextBlob(text)
     polarity = blob.sentiment.polarity
     subjectivity = blob.sentiment.subjectivity
@@ -18,30 +18,25 @@ def analyze_sentiment(text: str) -> dict:
 
 def new_feature():
     """
-    Flask API endpoint for batch sentiment analysis.
-    Accepts a JSON payload: {"texts": ["text1", "text2", ...]}
-    Returns: [{"text": ..., "sentiment": ..., "polarity": ..., "subjectivity": ...}, ...]
+    Flask API endpoint for sentiment analysis.
+    POST /api/sentiment-analysis
+    Body: { "text": "..." }
+    Response: { "sentiment": "...", "polarity": ..., "subjectivity": ... }
     """
     app = Flask(__name__)
-    LOG_PATH = Path(os.getenv("TARGET_REPO_PATH", os.getcwd())) / "batch_sentiment_analysis.log"
-    logger = setup_logger("batch_sentiment_api", str(LOG_PATH), level=os.getenv("API_LOG_LEVEL", "INFO"))
+    LOG_PATH = Path(os.getenv("TARGET_REPO_PATH", os.getcwd())) / "sentiment_analysis.log"
+    logger = setup_logger("sentiment_api", str(LOG_PATH), level=os.getenv("API_LOG_LEVEL", "INFO"))
 
-    @app.route("/api/batch-sentiment", methods=["POST"])
-    def batch_sentiment():
+    @app.route("/api/sentiment-analysis", methods=["POST"])
+    def sentiment_analysis():
         data = request.get_json()
-        if not data or "texts" not in data or not isinstance(data["texts"], list):
-            logger.error("Invalid input for batch sentiment analysis")
-            return jsonify({"error": "Invalid input. Provide a JSON with a 'texts' list."}), 400
-        results = []
-        for text in data["texts"]:
-            if not isinstance(text, str):
-                logger.warning(f"Non-string input skipped: {text}")
-                continue
-            sentiment_result = analyze_sentiment(text)
-            sentiment_result["text"] = text
-            results.append(sentiment_result)
-        logger.info(f"Batch sentiment analysis completed for {len(results)} texts.")
-        return jsonify(results), 200
+        if not data or "text" not in data:
+            logger.warning("No text provided for sentiment analysis.")
+            return jsonify({"error": "Missing 'text' in request body"}), 400
+        text = data["text"]
+        result = analyze_sentiment(text)
+        logger.info(f"Sentiment analysis performed: {result}")
+        return jsonify(result)
 
     app.run(host="0.0.0.0", port=5050)
 
