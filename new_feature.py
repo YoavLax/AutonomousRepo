@@ -20,12 +20,12 @@ def new_feature():
     """
     Flask API endpoint for sentiment analysis.
     POST /api/sentiment-analysis
-    Body: { "text": "..." }
+    JSON body: { "text": "some text" }
     Response: { "sentiment": "...", "polarity": ..., "subjectivity": ... }
     """
     app = Flask(__name__)
     LOG_PATH = Path(os.getenv("TARGET_REPO_PATH", os.getcwd())) / "sentiment_analysis.log"
-    logger = setup_logger("sentiment_analysis_api", str(LOG_PATH), level=os.getenv("API_LOG_LEVEL", "INFO"))
+    logger = setup_logger("sentiment_api", str(LOG_PATH), level=os.getenv("API_LOG_LEVEL", "INFO"))
 
     @app.route("/api/sentiment-analysis", methods=["POST"])
     def sentiment_analysis():
@@ -35,9 +35,13 @@ def new_feature():
             return jsonify({"error": "Missing 'text' in request body"}), 400
         text = data["text"]
         logger.info(f"Analyzing sentiment for text: {text[:100]}...")
-        result = analyze_sentiment(text)
-        logger.info(f"Sentiment result: {result}")
-        return jsonify(result)
+        try:
+            result = analyze_sentiment(text)
+            logger.info(f"Sentiment result: {result}")
+            return jsonify(result)
+        except Exception as e:
+            logger.error(f"Error during sentiment analysis: {e}")
+            return jsonify({"error": "Sentiment analysis failed"}), 500
 
     app.run(host="0.0.0.0", port=5050)
 
