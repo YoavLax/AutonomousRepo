@@ -5,7 +5,7 @@ from logging_utils import setup_logger
 from textblob import TextBlob
 
 def analyze_sentiment(text: str) -> dict:
-    """Analyze sentiment of the provided text using TextBlob."""
+    """Analyze sentiment of the given text using TextBlob."""
     blob = TextBlob(text)
     polarity = blob.sentiment.polarity
     subjectivity = blob.sentiment.subjectivity
@@ -20,7 +20,7 @@ def new_feature():
     """
     Flask API endpoint for sentiment analysis.
     POST /api/sentiment-analysis
-    Body: { "text": "..." }
+    JSON body: { "text": "some text" }
     Response: { "sentiment": "...", "polarity": ..., "subjectivity": ... }
     """
     app = Flask(__name__)
@@ -29,13 +29,18 @@ def new_feature():
 
     @app.route("/api/sentiment-analysis", methods=["POST"])
     def sentiment_analysis():
-        data = request.get_json()
-        if not data or "text" not in data:
-            logger.warning("No text provided for sentiment analysis.")
-            return jsonify({"error": "Missing 'text' in request body"}), 400
-        result = analyze_sentiment(data["text"])
-        logger.info(f"Sentiment analysis result: {result}")
-        return jsonify(result)
+        data = request.get_json(force=True)
+        text = data.get("text", "")
+        if not text or not isinstance(text, str):
+            logger.warning("Invalid or missing 'text' in request")
+            return jsonify({"error": "Missing or invalid 'text' field"}), 400
+        try:
+            result = analyze_sentiment(text)
+            logger.info(f"Sentiment analysis performed: {result}")
+            return jsonify(result)
+        except Exception as e:
+            logger.error(f"Error during sentiment analysis: {e}")
+            return jsonify({"error": "Internal server error"}), 500
 
     app.run(host="0.0.0.0", port=5050)
 
