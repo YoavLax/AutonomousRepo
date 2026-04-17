@@ -9,11 +9,7 @@ def analyze_sentiment(text: str) -> dict:
     blob = TextBlob(text)
     polarity = blob.sentiment.polarity
     subjectivity = blob.sentiment.subjectivity
-    sentiment = (
-        "positive" if polarity > 0.1 else
-        "negative" if polarity < -0.1 else
-        "neutral"
-    )
+    sentiment = "positive" if polarity > 0.1 else "negative" if polarity < -0.1 else "neutral"
     return {
         "sentiment": sentiment,
         "polarity": polarity,
@@ -21,6 +17,7 @@ def analyze_sentiment(text: str) -> dict:
     }
 
 def create_sentiment_api():
+    """Create a Flask API endpoint for sentiment analysis."""
     app = Flask(__name__)
     LOG_PATH = Path(os.getenv("TARGET_REPO_PATH", os.getcwd())) / "sentiment_api.log"
     logger = setup_logger("sentiment_api", str(LOG_PATH), level=os.getenv("API_LOG_LEVEL", "INFO"))
@@ -32,18 +29,14 @@ def create_sentiment_api():
             logger.warning("No text provided for sentiment analysis.")
             return jsonify({"error": "Missing 'text' in request body"}), 400
         text = data["text"]
-        logger.info(f"Analyzing sentiment for text: {text[:100]}...")
         result = analyze_sentiment(text)
-        logger.info(f"Sentiment result: {result}")
+        logger.info(f"Sentiment analysis performed: {result}")
         return jsonify(result)
 
     return app
 
 def new_feature():
-    """
-    Run a standalone Flask server providing a /api/sentiment endpoint
-    for sentiment analysis of user-provided text.
-    """
+    """Run the sentiment analysis API server."""
     app = create_sentiment_api()
     app.run(host="0.0.0.0", port=5050)
 
