@@ -5,47 +5,40 @@ from logging_utils import setup_logger
 from textblob import TextBlob
 
 def analyze_sentiment(text: str) -> dict:
-    """Analyze sentiment of the given text using TextBlob."""
+    """Analyze sentiment of the provided text using TextBlob."""
     blob = TextBlob(text)
     polarity = blob.sentiment.polarity
     subjectivity = blob.sentiment.subjectivity
-    sentiment = (
-        "positive" if polarity > 0.1 else
-        "negative" if polarity < -0.1 else
-        "neutral"
-    )
+    sentiment = "positive" if polarity > 0.1 else "negative" if polarity < -0.1 else "neutral"
     return {
         "sentiment": sentiment,
         "polarity": polarity,
         "subjectivity": subjectivity
     }
 
-def create_app():
+def new_feature():
+    """
+    Flask API endpoint for sentiment analysis.
+    POST /api/sentiment-analysis
+    Body: { "text": "..." }
+    Response: { "sentiment": "...", "polarity": ..., "subjectivity": ... }
+    """
     app = Flask(__name__)
     LOG_PATH = Path(os.getenv("TARGET_REPO_PATH", os.getcwd())) / "sentiment_analysis.log"
-    logger = setup_logger("sentiment_api", str(LOG_PATH), level=os.getenv("API_LOG_LEVEL", "INFO"))
+    logger = setup_logger("sentiment_analysis_api", str(LOG_PATH), level=os.getenv("API_LOG_LEVEL", "INFO"))
 
-    @app.route("/api/sentiment", methods=["POST"])
-    def sentiment_api():
+    @app.route("/api/sentiment-analysis", methods=["POST"])
+    def sentiment_analysis():
         data = request.get_json()
         if not data or "text" not in data:
             logger.warning("No text provided for sentiment analysis.")
             return jsonify({"error": "Missing 'text' in request body"}), 400
         text = data["text"]
-        try:
-            result = analyze_sentiment(text)
-            logger.info(f"Sentiment analyzed: {result}")
-            return jsonify(result)
-        except Exception as e:
-            logger.error(f"Error during sentiment analysis: {e}")
-            return jsonify({"error": "Internal server error"}), 500
+        result = analyze_sentiment(text)
+        logger.info(f"Sentiment analysis performed: {result}")
+        return jsonify(result)
 
-    return app
-
-def new_feature():
-    """Run a Flask server providing a /api/sentiment endpoint for text sentiment analysis."""
-    app = create_app()
-    app.run(host="0.0.0.0", port=5050)
+    app.run(host="0.0.0.0", port=5001)
 
 if __name__ == "__main__":
     new_feature()
