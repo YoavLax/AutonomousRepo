@@ -4,47 +4,67 @@ from pathlib import Path
 from logging_utils import setup_logger
 from textblob import TextBlob
 
-def analyze_sentiment_batch(texts):
+app = Flask(__name__)
+LOG_PATH = Path(os.getenv("TARGET_REPO_PATH", os.getcwd())) / "sentiment_feedback.log"
+logger = setup_logger("sentiment_feedback", str(LOG_PATH), level=os.getenv("API_LOG_LEVEL", "INFO"))
+
+FEEDBACK_FILE = Path(os.getenv("TARGET_REPO_PATH", os.getcwd())) / "user_sentiment_feedback.csv"
+
+def analyze_sentiment(text: str) -> dict:
+    blob = TextBlob(text)
+    polarity = blob.sentiment.polarity
+    subjectivity = blob.sentiment.subjectivity
+    sentiment = (
+        "positive" if polarity > 0.1 else
+        "negative" if polarity < -0.1 else
+        "neutral"
+    )
+    return {
+        "sentiment": sentiment,
+        "polarity": polarity,
+        "subjectivity": subjectivity
+    }
+
+def save_feedback(text: str, user_sentiment: str, auto_sentiment: str):
+    header = "text,user_sentiment,auto_sentiment\n"
+    line = f'"{text.replace("\"", "\"\"")}",{user_sentiment},{auto_sentiment}\n'
+    write_header = not FEEDBACK_FILE.exists()
+    with open(FEEDBACK_FILE, "a", encoding="utf-8") as f:
+        if write_header:
+            f.write(header)
+        f.write(line)
+
+@app.route("/api/sentiment-feedback", methods=["POST"])
+def sentiment_feedback():
     """
-    Analyze sentiment for a batch of texts.
-    Returns a list of dicts with polarity and subjectivity.
+    Accepts user text and their sentiment feedback, compares with automatic sentiment analysis,
+    and logs the result for future model improvement.
     """
-    results = []
-    for text in texts:
-        blob = TextBlob(text)
-        results.append({
-            "text": text,
-            "polarity": blob.sentiment.polarity,
-            "subjectivity": blob.sentiment.subjectivity
-        })
-    return results
+    data = request.get_json(force=True)
+    text = data.get("text", "")
+    user_sentiment = data.get("user_sentiment", "").lower()
+    if not text or user_sentiment not in {"positive", "neutral", "negative"}:
+        logger.warning("Invalid input for sentiment feedback")
+        return jsonify({"error": "Invalid input"}), 400
 
-def create_app():
-    app = Flask(__name__)
-    LOG_PATH = Path(os.getenv("TARGET_REPO_PATH", os.getcwd())) / "batch_sentiment.log"
-    logger = setup_logger("batch_sentiment", str(LOG_PATH), level=os.getenv("API_LOG_LEVEL", "INFO"))
+    auto_result = analyze_sentiment(text)
+    auto_sentiment = auto_result["sentiment"]
 
-    @app.route("/api/batch-sentiment", methods=["POST"])
-    def batch_sentiment():
-        """
-        Accepts JSON: { "texts": [ ... ] }
-        Returns: [{ "text": ..., "polarity": ..., "subjectivity": ... }, ...]
-        """
-        data = request.get_json(force=True)
-        texts = data.get("texts")
-        if not isinstance(texts, list) or not all(isinstance(t, str) for t in texts):
-            logger.error("Invalid input for batch sentiment analysis")
-            return jsonify({"error": "Invalid input. 'texts' must be a list of strings."}), 400
-        logger.info(f"Analyzing sentiment for batch of {len(texts)} texts")
-        results = analyze_sentiment_batch(texts)
-        return jsonify(results)
+    save_feedback(text, user_sentiment, auto_sentiment)
+    logger.info(f"Feedback saved: user={user_sentiment}, auto={auto_sentiment}")
 
-    return app
+    return jsonify({
+        "user_sentiment": user_sentiment,
+        "auto_sentiment": auto_sentiment,
+        "match": user_sentiment == auto_sentiment
+    })
 
 def new_feature():
-    '''Run a Flask server providing batch sentiment analysis API'''
-    app = create_app()
-    app.run(host="0.0.0.0", port=5050)
+    """
+    Starts a Flask server with a /api/sentiment-feedback endpoint for collecting user sentiment feedback.
+    """
+    logger.info("Starting Sentiment Feedback API server on http://127.0.0.1:5001")
+    app.run(port=5001)
 
 if __name__ == "__main__":
     new_feature()
