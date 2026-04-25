@@ -5,13 +5,15 @@ from logging_utils import setup_logger
 from textblob import TextBlob
 
 def analyze_sentiment(text: str) -> dict:
-    """Analyze sentiment of the provided text using TextBlob."""
+    """Analyze sentiment of the given text using TextBlob."""
     blob = TextBlob(text)
-    sentiment = blob.sentiment
+    polarity = blob.sentiment.polarity
+    subjectivity = blob.sentiment.subjectivity
+    sentiment = "positive" if polarity > 0.1 else "negative" if polarity < -0.1 else "neutral"
     return {
-        "polarity": sentiment.polarity,
-        "subjectivity": sentiment.subjectivity,
-        "label": "positive" if sentiment.polarity > 0 else "negative" if sentiment.polarity < 0 else "neutral"
+        "sentiment": sentiment,
+        "polarity": polarity,
+        "subjectivity": subjectivity
     }
 
 def create_sentiment_api():
@@ -25,7 +27,7 @@ def create_sentiment_api():
         data = request.get_json()
         if not data or "text" not in data:
             logger.warning("No text provided for sentiment analysis.")
-            return jsonify({"error": "Missing 'text' in request body"}), 400
+            return jsonify({"error": "Missing 'text' in request body."}), 400
         text = data["text"]
         result = analyze_sentiment(text)
         logger.info(f"Sentiment analysis performed: {result}")
@@ -36,7 +38,7 @@ def create_sentiment_api():
 def new_feature():
     """Run the sentiment analysis API server."""
     app = create_sentiment_api()
-    app.run(host="0.0.0.0", port=5050, debug=False)
+    app.run(host="0.0.0.0", port=5050)
 
 if __name__ == "__main__":
     new_feature()
