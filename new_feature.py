@@ -16,9 +16,9 @@ def analyze_sentiment(text: str) -> dict:
 
 def new_feature():
     """
-    Adds a Flask API endpoint for sentiment analysis.
+    Flask API endpoint for sentiment analysis.
     POST /api/sentiment
-    Body: { "text": "..." }
+    Body: { "text": "some text" }
     Response: { "polarity": float, "subjectivity": float, "label": str }
     """
     app = Flask(__name__)
@@ -32,14 +32,9 @@ def new_feature():
             logger.warning("No text provided for sentiment analysis.")
             return jsonify({"error": "Missing 'text' in request body"}), 400
         text = data["text"]
-        logger.info(f"Analyzing sentiment for text: {text[:100]}")
-        try:
-            result = analyze_sentiment(text)
-            logger.info(f"Sentiment result: {result}")
-            return jsonify(result)
-        except Exception as e:
-            logger.error(f"Sentiment analysis failed: {e}")
-            return jsonify({"error": "Sentiment analysis failed"}), 500
+        result = analyze_sentiment(text)
+        logger.info(f"Sentiment analysis for text: {text[:50]}... Result: {result}")
+        return jsonify(result)
 
     app.run(host="0.0.0.0", port=5050)
 
