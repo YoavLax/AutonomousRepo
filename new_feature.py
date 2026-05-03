@@ -9,7 +9,7 @@ def analyze_sentiment(text: str) -> dict:
     blob = TextBlob(text)
     polarity = blob.sentiment.polarity
     subjectivity = blob.sentiment.subjectivity
-    sentiment = "positive" if polarity > 0 else "negative" if polarity < 0 else "neutral"
+    sentiment = "positive" if polarity > 0.1 else "negative" if polarity < -0.1 else "neutral"
     return {
         "sentiment": sentiment,
         "polarity": polarity,
@@ -37,7 +37,7 @@ def new_feature():
         logger.info(f"Sentiment analysis result: {result}")
         return jsonify(result)
 
-    app.run(host="0.0.0.0", port=5002)
+    app.run(host="0.0.0.0", port=5050)
 
 if __name__ == "__main__":
     new_feature()
