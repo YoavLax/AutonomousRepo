@@ -5,17 +5,19 @@ from logging_utils import setup_logger
 from textblob import TextBlob
 
 def analyze_sentiment(text: str) -> dict:
-    """Analyze the sentiment of the provided text using TextBlob."""
+    """Analyze sentiment of the given text using TextBlob."""
     blob = TextBlob(text)
-    sentiment = blob.sentiment
+    polarity = blob.sentiment.polarity
+    subjectivity = blob.sentiment.subjectivity
+    sentiment = "positive" if polarity > 0 else "negative" if polarity < 0 else "neutral"
     return {
-        "polarity": sentiment.polarity,
-        "subjectivity": sentiment.subjectivity,
-        "label": "positive" if sentiment.polarity > 0 else "negative" if sentiment.polarity < 0 else "neutral"
+        "sentiment": sentiment,
+        "polarity": polarity,
+        "subjectivity": subjectivity
     }
 
-def run_sentiment_api():
-    """Run a Flask API server for sentiment analysis."""
+def create_sentiment_api():
+    """Create a Flask API for sentiment analysis."""
     app = Flask(__name__)
     LOG_PATH = Path(os.getenv("TARGET_REPO_PATH", os.getcwd())) / "sentiment_api.log"
     logger = setup_logger("sentiment_api", str(LOG_PATH), level=os.getenv("API_LOG_LEVEL", "INFO"))
@@ -30,7 +32,12 @@ def run_sentiment_api():
         logger.info(f"Sentiment analysis result: {result}")
         return jsonify(result)
 
-    app.run(host="0.0.0.0", port=5002)
+    return app
+
+def new_feature():
+    """Run the sentiment analysis API server."""
+    app = create_sentiment_api()
+    app.run(host="0.0.0.0", port=5050)
 
 if __name__ == "__main__":
-    run_sentiment_api()
+    new_feature()
