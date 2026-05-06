@@ -5,7 +5,7 @@ from logging_utils import setup_logger
 from textblob import TextBlob
 
 def analyze_sentiment(text: str) -> dict:
-    """Analyze the sentiment of the given text using TextBlob."""
+    """Analyze the sentiment of the provided text using TextBlob."""
     blob = TextBlob(text)
     sentiment = blob.sentiment
     return {
@@ -26,14 +26,15 @@ def run_sentiment_api():
         if not data or "text" not in data:
             logger.warning("No text provided for sentiment analysis.")
             return jsonify({"error": "Missing 'text' in request body"}), 400
-        result = analyze_sentiment(data["text"])
-        logger.info(f"Sentiment analysis result: {result}")
+        text = data["text"]
+        result = analyze_sentiment(text)
+        logger.info(f"Sentiment analysis for text: {text[:50]}... Result: {result}")
         return jsonify(result)
 
     app.run(host="0.0.0.0", port=5050)
 
 def new_feature():
-    '''Launches a sentiment analysis API endpoint'''
+    '''Launches a sentiment analysis API endpoint using TextBlob.'''
     run_sentiment_api()
 
 if __name__ == "__main__":
