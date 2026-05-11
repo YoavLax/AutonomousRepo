@@ -7,11 +7,9 @@ from textblob import TextBlob
 def analyze_sentiment(text: str) -> dict:
     """Analyze sentiment of the given text using TextBlob."""
     blob = TextBlob(text)
-    sentiment = blob.sentiment
     return {
-        "polarity": sentiment.polarity,
-        "subjectivity": sentiment.subjectivity,
-        "label": "positive" if sentiment.polarity > 0 else "negative" if sentiment.polarity < 0 else "neutral"
+        "polarity": blob.sentiment.polarity,
+        "subjectivity": blob.sentiment.subjectivity
     }
 
 def create_sentiment_api():
@@ -27,8 +25,8 @@ def create_sentiment_api():
             logger.warning("No text provided for sentiment analysis.")
             return jsonify({"error": "Missing 'text' in request body"}), 400
         text = data["text"]
+        logger.info(f"Analyzing sentiment for text: {text[:100]}")
         result = analyze_sentiment(text)
-        logger.info(f"Sentiment analysis for text: {text} -> {result}")
         return jsonify(result)
 
     return app
