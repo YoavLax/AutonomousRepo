@@ -7,13 +7,10 @@ from textblob import TextBlob
 def analyze_sentiment(text: str) -> dict:
     """Analyze sentiment of the given text using TextBlob."""
     blob = TextBlob(text)
-    polarity = blob.sentiment.polarity
-    subjectivity = blob.sentiment.subjectivity
-    sentiment = "positive" if polarity > 0.1 else "negative" if polarity < -0.1 else "neutral"
     return {
-        "sentiment": sentiment,
-        "polarity": polarity,
-        "subjectivity": subjectivity
+        "polarity": blob.sentiment.polarity,
+        "subjectivity": blob.sentiment.subjectivity,
+        "sentiment": "positive" if blob.sentiment.polarity > 0 else "negative" if blob.sentiment.polarity < 0 else "neutral"
     }
 
 def create_sentiment_api():
@@ -26,20 +23,16 @@ def create_sentiment_api():
     def sentiment():
         data = request.get_json()
         if not data or "text" not in data:
-            logger.error("No text provided for sentiment analysis.")
+            logger.warning("No text provided for sentiment analysis.")
             return jsonify({"error": "Missing 'text' in request body"}), 400
-        try:
-            result = analyze_sentiment(data["text"])
-            logger.info(f"Sentiment analysis result: {result}")
-            return jsonify(result)
-        except Exception as e:
-            logger.exception("Error during sentiment analysis")
-            return jsonify({"error": str(e)}), 500
+        result = analyze_sentiment(data["text"])
+        logger.info(f"Sentiment analysis result: {result}")
+        return jsonify(result)
 
     app.run(host="0.0.0.0", port=5050)
 
 def new_feature():
-    '''Launches a Flask API for sentiment analysis of user-provided text.'''
+    '''Launches a Flask API endpoint for sentiment analysis'''
     create_sentiment_api()
 
 if __name__ == "__main__":
