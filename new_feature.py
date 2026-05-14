@@ -7,13 +7,11 @@ from textblob import TextBlob
 def analyze_sentiment(text: str) -> dict:
     """Analyze sentiment of the given text using TextBlob."""
     blob = TextBlob(text)
-    polarity = blob.sentiment.polarity
-    subjectivity = blob.sentiment.subjectivity
-    sentiment = "positive" if polarity > 0.1 else "negative" if polarity < -0.1 else "neutral"
+    sentiment = blob.sentiment
     return {
-        "sentiment": sentiment,
-        "polarity": polarity,
-        "subjectivity": subjectivity
+        "polarity": sentiment.polarity,
+        "subjectivity": sentiment.subjectivity,
+        "sentiment": "positive" if sentiment.polarity > 0 else "negative" if sentiment.polarity < 0 else "neutral"
     }
 
 def run_sentiment_api():
@@ -23,13 +21,14 @@ def run_sentiment_api():
     logger = setup_logger("sentiment_api", str(LOG_PATH), level=os.getenv("API_LOG_LEVEL", "INFO"))
 
     @app.route("/api/sentiment", methods=["POST"])
-    def sentiment():
+    def sentiment_endpoint():
         data = request.get_json()
         if not data or "text" not in data:
             logger.warning("No text provided for sentiment analysis.")
-            return jsonify({"error": "Missing 'text' in request body"}), 400
-        result = analyze_sentiment(data["text"])
-        logger.info(f"Sentiment analysis result: {result}")
+            return jsonify({"error": "Missing 'text' in request body."}), 400
+        text = data["text"]
+        result = analyze_sentiment(text)
+        logger.info(f"Sentiment analysis performed for text: {text[:50]}...")
         return jsonify(result)
 
     app.run(host="0.0.0.0", port=5050)
