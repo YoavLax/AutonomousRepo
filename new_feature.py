@@ -12,28 +12,29 @@ def analyze_sentiment(text: str) -> dict:
         "subjectivity": blob.sentiment.subjectivity
     }
 
-def sentiment_analysis_endpoint():
-    """
-    Flask app providing a /api/sentiment-analysis endpoint.
-    Accepts POST requests with JSON: {"text": "..."}
-    Returns sentiment analysis result.
-    """
+def create_sentiment_api():
+    """Create a Flask API endpoint for sentiment analysis."""
     app = Flask(__name__)
-    LOG_PATH = Path(os.getenv("TARGET_REPO_PATH", os.getcwd())) / "sentiment_analysis.log"
+    LOG_PATH = Path(os.getenv("TARGET_REPO_PATH", os.getcwd())) / "sentiment_api.log"
     logger = setup_logger("sentiment_api", str(LOG_PATH), level=os.getenv("API_LOG_LEVEL", "INFO"))
 
-    @app.route("/api/sentiment-analysis", methods=["POST"])
-    def sentiment_api():
+    @app.route("/api/sentiment", methods=["POST"])
+    def sentiment():
         data = request.get_json()
         if not data or "text" not in data:
             logger.warning("No text provided for sentiment analysis.")
-            return jsonify({"error": "Missing 'text' in request body."}), 400
+            return jsonify({"error": "No text provided"}), 400
         text = data["text"]
         result = analyze_sentiment(text)
-        logger.info(f"Sentiment analysis for text: {text[:50]}... Result: {result}")
+        logger.info(f"Sentiment analysis for text: {text} | Result: {result}")
         return jsonify(result)
 
-    app.run(host="0.0.0.0", port=5050)
+    return app
+
+def new_feature():
+    """Run the sentiment analysis API server."""
+    app = create_sentiment_api()
+    app.run(host="0.0.0.0", port=5002)
 
 if __name__ == "__main__":
-    sentiment_analysis_endpoint()
+    new_feature()
