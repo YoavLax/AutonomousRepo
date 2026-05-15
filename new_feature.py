@@ -7,32 +7,33 @@ from textblob import TextBlob
 def analyze_sentiment(text: str) -> dict:
     """Analyze sentiment of the given text using TextBlob."""
     blob = TextBlob(text)
-    polarity = blob.sentiment.polarity
-    subjectivity = blob.sentiment.subjectivity
-    sentiment = "positive" if polarity > 0 else "negative" if polarity < 0 else "neutral"
     return {
-        "sentiment": sentiment,
-        "polarity": polarity,
-        "subjectivity": subjectivity
+        "polarity": blob.sentiment.polarity,
+        "subjectivity": blob.sentiment.subjectivity
     }
 
-def run_sentiment_api():
-    """Run a Flask API server for sentiment analysis."""
+def sentiment_analysis_endpoint():
+    """
+    Flask app providing a /api/sentiment-analysis endpoint.
+    Accepts POST requests with JSON: {"text": "..."}
+    Returns sentiment analysis result.
+    """
     app = Flask(__name__)
-    LOG_PATH = Path(os.getenv("TARGET_REPO_PATH", os.getcwd())) / "sentiment_api.log"
+    LOG_PATH = Path(os.getenv("TARGET_REPO_PATH", os.getcwd())) / "sentiment_analysis.log"
     logger = setup_logger("sentiment_api", str(LOG_PATH), level=os.getenv("API_LOG_LEVEL", "INFO"))
 
-    @app.route("/api/sentiment", methods=["POST"])
-    def sentiment():
+    @app.route("/api/sentiment-analysis", methods=["POST"])
+    def sentiment_api():
         data = request.get_json()
         if not data or "text" not in data:
             logger.warning("No text provided for sentiment analysis.")
-            return jsonify({"error": "Missing 'text' in request body"}), 400
-        result = analyze_sentiment(data["text"])
-        logger.info(f"Sentiment analysis result: {result}")
+            return jsonify({"error": "Missing 'text' in request body."}), 400
+        text = data["text"]
+        result = analyze_sentiment(text)
+        logger.info(f"Sentiment analysis for text: {text[:50]}... Result: {result}")
         return jsonify(result)
 
     app.run(host="0.0.0.0", port=5050)
 
 if __name__ == "__main__":
-    run_sentiment_api()
+    sentiment_analysis_endpoint()
