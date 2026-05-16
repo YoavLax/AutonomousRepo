@@ -7,13 +7,9 @@ from textblob import TextBlob
 def analyze_sentiment(text: str) -> dict:
     """Analyze sentiment of the given text using TextBlob."""
     blob = TextBlob(text)
-    polarity = blob.sentiment.polarity
-    subjectivity = blob.sentiment.subjectivity
-    sentiment = "positive" if polarity > 0.1 else "negative" if polarity < -0.1 else "neutral"
     return {
-        "sentiment": sentiment,
-        "polarity": polarity,
-        "subjectivity": subjectivity
+        "polarity": blob.sentiment.polarity,
+        "subjectivity": blob.sentiment.subjectivity
     }
 
 def run_sentiment_api():
@@ -27,16 +23,13 @@ def run_sentiment_api():
         data = request.get_json()
         if not data or "text" not in data:
             logger.warning("No text provided for sentiment analysis.")
-            return jsonify({"error": "Missing 'text' in request body."}), 400
-        result = analyze_sentiment(data["text"])
-        logger.info(f"Sentiment analysis result: {result}")
+            return jsonify({"error": "Missing 'text' in request body"}), 400
+        text = data["text"]
+        result = analyze_sentiment(text)
+        logger.info(f"Sentiment analyzed for text: {text[:30]}... Result: {result}")
         return jsonify(result)
 
     app.run(host="0.0.0.0", port=5050)
 
-def new_feature():
-    '''Launches a sentiment analysis API endpoint'''
-    run_sentiment_api()
-
 if __name__ == "__main__":
-    new_feature()
+    run_sentiment_api()
