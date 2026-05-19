@@ -4,47 +4,37 @@ from pathlib import Path
 from logging_utils import setup_logger
 from textblob import TextBlob
 
-def analyze_sentiment_batch(texts):
-    """
-    Analyze sentiment for a batch of texts.
-    Returns a list of dicts with polarity and subjectivity.
-    """
-    results = []
-    for text in texts:
-        blob = TextBlob(text)
-        results.append({
-            "text": text,
-            "polarity": blob.sentiment.polarity,
-            "subjectivity": blob.sentiment.subjectivity
-        })
-    return results
+def analyze_sentiment(text: str) -> dict:
+    """Analyze the sentiment of the provided text using TextBlob."""
+    blob = TextBlob(text)
+    sentiment = blob.sentiment
+    return {
+        "polarity": sentiment.polarity,
+        "subjectivity": sentiment.subjectivity,
+        "label": "positive" if sentiment.polarity > 0 else "negative" if sentiment.polarity < 0 else "neutral"
+    }
 
 def create_sentiment_api():
+    """Create a Flask API endpoint for sentiment analysis."""
     app = Flask(__name__)
-    LOG_PATH = Path(os.getenv("TARGET_REPO_PATH", os.getcwd())) / "sentiment_batch.log"
-    logger = setup_logger("sentiment_batch_api", str(LOG_PATH), level=os.getenv("API_LOG_LEVEL", "INFO"))
+    LOG_PATH = Path(os.getenv("TARGET_REPO_PATH", os.getcwd())) / "sentiment_api.log"
+    logger = setup_logger("sentiment_api", str(LOG_PATH), level=os.getenv("API_LOG_LEVEL", "INFO"))
 
-    @app.route("/api/sentiment-batch", methods=["POST"])
-    def sentiment_batch():
-        """
-        Accepts JSON: { "texts": [ ... ] }
-        Returns: [{ "text": ..., "polarity": ..., "subjectivity": ... }, ...]
-        """
-        data = request.get_json(force=True)
-        texts = data.get("texts")
-        if not isinstance(texts, list) or not all(isinstance(t, str) for t in texts):
-            logger.error("Invalid input for sentiment batch")
-            return jsonify({"error": "Invalid input. 'texts' must be a list of strings."}), 400
-        logger.info(f"Analyzing sentiment for batch of {len(texts)} texts")
-        results = analyze_sentiment_batch(texts)
-        return jsonify(results)
+    @app.route("/api/sentiment", methods=["POST"])
+    def sentiment():
+        data = request.get_json()
+        if not data or "text" not in data:
+            logger.warning("No text provided for sentiment analysis.")
+            return jsonify({"error": "Missing 'text' in request body"}), 400
+        result = analyze_sentiment(data["text"])
+        logger.info(f"Sentiment analysis result: {result}")
+        return jsonify(result)
 
-    return app
+    app.run(host="0.0.0.0", port=5002)
 
 def new_feature():
-    '''Run a Flask API server for batch sentiment analysis'''
-    app = create_sentiment_api()
-    app.run(host="0.0.0.0", port=5050)
+    '''Adds a Flask API endpoint for sentiment analysis of user-provided text.'''
+    create_sentiment_api()
 
 if __name__ == "__main__":
     new_feature()
