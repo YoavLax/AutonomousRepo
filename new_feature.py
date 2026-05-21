@@ -4,35 +4,46 @@ from pathlib import Path
 from logging_utils import setup_logger
 from textblob import TextBlob
 
-def analyze_sentiment(text: str) -> dict:
-    """Analyze sentiment of the given text using TextBlob."""
-    blob = TextBlob(text)
-    polarity = blob.sentiment.polarity
-    subjectivity = blob.sentiment.subjectivity
-    sentiment = "positive" if polarity > 0.1 else "negative" if polarity < -0.1 else "neutral"
-    return {
-        "sentiment": sentiment,
-        "polarity": polarity,
-        "subjectivity": subjectivity
-    }
+app = Flask(__name__)
+LOG_PATH = Path(os.getenv("TARGET_REPO_PATH", os.getcwd())) / "new_feature.log"
+logger = setup_logger("new_feature", str(LOG_PATH), level=os.getenv("API_LOG_LEVEL", "INFO"))
 
-def run_sentiment_api():
-    """Run a Flask API server for sentiment analysis."""
-    app = Flask(__name__)
-    LOG_PATH = Path(os.getenv("TARGET_REPO_PATH", os.getcwd())) / "sentiment_api.log"
-    logger = setup_logger("sentiment_api", str(LOG_PATH), level=os.getenv("API_LOG_LEVEL", "INFO"))
+@app.route("/api/sentiment", methods=["POST"])
+def analyze_sentiment():
+    """
+    Analyze the sentiment of the provided text.
+    Expects JSON: { "text": "your text here" }
+    Returns: { "polarity": float, "subjectivity": float, "sentiment": "positive|neutral|negative" }
+    """
+    data = request.get_json()
+    if not data or "text" not in data:
+        logger.warning("No text provided for sentiment analysis.")
+        return jsonify({"error": "Missing 'text' in request body."}), 400
 
-    @app.route("/api/sentiment", methods=["POST"])
-    def sentiment():
-        data = request.get_json()
-        if not data or "text" not in data:
-            logger.warning("No text provided for sentiment analysis.")
-            return jsonify({"error": "Missing 'text' in request body"}), 400
-        result = analyze_sentiment(data["text"])
-        logger.info(f"Sentiment analysis result: {result}")
-        return jsonify(result)
+    text = data["text"]
+    try:
+        blob = TextBlob(text)
+        polarity = blob.sentiment.polarity
+        subjectivity = blob.sentiment.subjectivity
+        if polarity > 0.1:
+            sentiment = "positive"
+        elif polarity < -0.1:
+            sentiment = "negative"
+        else:
+            sentiment = "neutral"
+        logger.info(f"Sentiment analyzed: {sentiment} (polarity={polarity}, subjectivity={subjectivity})")
+        return jsonify({
+            "polarity": polarity,
+            "subjectivity": subjectivity,
+            "sentiment": sentiment
+        })
+    except Exception as e:
+        logger.error(f"Error during sentiment analysis: {e}")
+        return jsonify({"error": "Failed to analyze sentiment."}), 500
 
-    app.run(host="0.0.0.0", port=5050)
+def new_feature():
+    '''Starts the Flask app to provide sentiment analysis API'''
+    app.run(host="0.0.0.0", port=5002, debug=False)
 
 if __name__ == "__main__":
-    run_sentiment_api()
+    new_feature()
