@@ -2,55 +2,47 @@ import os
 from flask import Flask, request, jsonify
 from pathlib import Path
 from logging_utils import setup_logger
-import sqlite3
-import datetime
+from textblob import TextBlob
 
-def log_user_feedback(feedback: str, rating: int, db_path: str = "user_feedback.db") -> None:
-    """Logs user feedback and rating to a SQLite database."""
-    conn = sqlite3.connect(db_path)
-    c = conn.cursor()
-    c.execute("""
-        CREATE TABLE IF NOT EXISTS feedback (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            feedback TEXT NOT NULL,
-            rating INTEGER NOT NULL,
-            timestamp TEXT NOT NULL
-        )
-    """)
-    c.execute(
-        "INSERT INTO feedback (feedback, rating, timestamp) VALUES (?, ?, ?)",
-        (feedback, rating, datetime.datetime.utcnow().isoformat())
-    )
-    conn.commit()
-    conn.close()
-
-def create_feedback_api():
-    """Creates a Flask API endpoint for submitting user feedback."""
-    app = Flask(__name__)
-    LOG_PATH = Path(os.getenv("TARGET_REPO_PATH", os.getcwd())) / "user_feedback.log"
-    logger = setup_logger("user_feedback_api", str(LOG_PATH), level=os.getenv("API_LOG_LEVEL", "INFO"))
-
-    @app.route("/api/submit-feedback", methods=["POST"])
-    def submit_feedback():
-        data = request.get_json()
-        feedback = data.get("feedback")
-        rating = data.get("rating")
-        if not feedback or not isinstance(rating, int) or not (1 <= rating <= 5):
-            logger.warning("Invalid feedback submission: %s", data)
-            return jsonify({"error": "Invalid input. 'feedback' (str) and 'rating' (1-5 int) required."}), 400
-        try:
-            log_user_feedback(feedback, rating)
-            logger.info("Feedback received: %s (Rating: %d)", feedback, rating)
-            return jsonify({"message": "Feedback submitted successfully."}), 200
-        except Exception as e:
-            logger.error("Error saving feedback: %s", str(e))
-            return jsonify({"error": "Failed to save feedback."}), 500
-
-    return app
+def analyze_sentiment(text: str) -> dict:
+    """Analyze sentiment of the given text using TextBlob."""
+    blob = TextBlob(text)
+    polarity = blob.sentiment.polarity
+    subjectivity = blob.sentiment.subjectivity
+    sentiment = "positive" if polarity > 0.1 else "negative" if polarity < -0.1 else "neutral"
+    return {
+        "sentiment": sentiment,
+        "polarity": polarity,
+        "subjectivity": subjectivity
+    }
 
 def new_feature():
-    """Runs the user feedback API server."""
-    app = create_feedback_api()
+    """
+    Flask API endpoint for sentiment analysis.
+    POST /api/sentiment-analysis
+    Body: { "text": "some text" }
+    Response: { "sentiment": "positive", "polarity": 0.5, "subjectivity": 0.6 }
+    """
+    app = Flask(__name__)
+    LOG_PATH = Path(os.getenv("TARGET_REPO_PATH", os.getcwd())) / "sentiment_analysis.log"
+    logger = setup_logger("sentiment_api", str(LOG_PATH), level=os.getenv("API_LOG_LEVEL", "INFO"))
+
+    @app.route("/api/sentiment-analysis", methods=["POST"])
+    def sentiment_analysis():
+        data = request.get_json()
+        if not data or "text" not in data:
+            logger.warning("No text provided for sentiment analysis.")
+            return jsonify({"error": "Missing 'text' in request body"}), 400
+        text = data["text"]
+        logger.info(f"Analyzing sentiment for text: {text[:100]}...")
+        try:
+            result = analyze_sentiment(text)
+            logger.info(f"Sentiment result: {result}")
+            return jsonify(result)
+        except Exception as e:
+            logger.error(f"Error during sentiment analysis: {e}")
+            return jsonify({"error": "Internal server error"}), 500
+
     app.run(host="0.0.0.0", port=5050)
 
 if __name__ == "__main__":
